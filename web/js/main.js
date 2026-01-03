@@ -2,24 +2,166 @@
 // MAIN INITIALIZATION
 // ========================================================================
 
-import { log } from "./utils.js";
-import { connect, disconnect } from "./connection.js";
-import { setActivePartition } from "./ota.js";
+import { log, showStatus, updateProgress, hideProgress } from "./utils.js";
+import { connect, disconnect, getEspLoader } from "./connection.js";
+import {
+  setActivePartition,
+  getActivePartition,
+  renamePartition,
+} from "./ota.js";
 import {
   initPatchUI,
   downloadKnownFirmware,
   uploadKnownFirmware,
   patchAndDownload,
+  patchAndFlash,
   resetDownloadedFirmware,
   downloadOriginal,
 } from "./patching.js";
 import { backupFullFlash, dumpPartition, restoreFullFlash } from "./backup.js";
-import { flashOta, flashPartition } from "./flash.js";
+import { flashOta, flashPartition, flashBufferToSlot } from "./flash.js";
 import { readNvsPartition } from "./nvs.js";
+
+// ========================================================================
+// CROSSPOINT LOGIC
+// ========================================================================
+async function fetchCrossPointInfo() {
+  const link = document.getElementById("cpReleaseLink");
+  if (!link) return;
+
+  try {
+    const resp = await fetch(
+      "https://api.github.com/repos/daveallie/crosspoint-reader/releases/latest",
+    );
+    if (!resp.ok) throw new Error("Fetch failed");
+    const data = await resp.json();
+    const version = data.tag_name || "Unknown";
+
+    link.textContent = version;
+    link.href = data.html_url || "#";
+
+    const btn = document.getElementById("installCrossPointBtn");
+    if (btn) btn.textContent = `Download & Install ${version}`;
+  } catch (e) {
+    link.textContent = "Error";
+    console.error(`Failed to fetch CrossPoint info: ${e.message}`);
+  }
+}
+
+async function installCrossPoint() {
+  const statusId = "crossPointStatus";
+  const progressId = "crossPointProgressBar";
+  const esploader = getEspLoader();
+
+  if (!esploader) {
+    showStatus(statusId, "Please connect to device first", "error");
+    return;
+  }
+
+  try {
+    showStatus(statusId, "Fetching latest release info...", "info");
+    updateProgress(progressId, 10);
+
+    // Fetch release info
+    const releaseUrl =
+      "https://api.github.com/repos/daveallie/crosspoint-reader/releases/latest";
+    const resp = await fetch(releaseUrl);
+    if (!resp.ok) throw new Error(`GitHub API Error: ${resp.status}`);
+
+    const releaseData = await resp.json();
+    const version = releaseData.tag_name || "latest"; // e.g. v1.2.3
+
+    // Find asset
+    const firmwareAsset = releaseData.assets.find((a) =>
+      a.name.endsWith("firmware.bin"),
+    );
+    if (!firmwareAsset)
+      throw new Error("No firmware.bin found in latest release");
+
+    log(`Found CrossPoint ${version}: ${firmwareAsset.name}`, "success");
+    showStatus(statusId, `Downloading ${version}...`, "info");
+    updateProgress(progressId, 30);
+
+    // Download
+    // Fix CORS by using API endpoint directly with specific header (bypasses redirect check on client)
+    const binResp = await fetch(firmwareAsset.url, {
+      headers: { Accept: "application/octet-stream" },
+    });
+    if (!binResp.ok) throw new Error(`Download failed: ${binResp.status}`);
+
+    const blob = await binResp.blob();
+    const arrayBuffer = await blob.arrayBuffer();
+    const buffer = new Uint8Array(arrayBuffer);
+
+    showStatus(
+      statusId,
+      `Verified size: ${buffer.length} bytes. Flashing...`,
+      "info",
+    );
+    updateProgress(progressId, 50);
+
+    // Determine target slot
+    const { inactiveSlot } = await getActivePartition(esploader);
+    const targetOffset = inactiveSlot === 0 ? 0x10000 : 0x650000;
+
+    // Verify partition size if table information is available
+    if (window.partitions) {
+      const targetPartition = window.partitions.find(
+        (p) => p.offset === targetOffset,
+      );
+      if (targetPartition) {
+        if (buffer.length > targetPartition.size) {
+          throw new Error(
+            `Firmware size (${(buffer.length / 1024).toFixed(1)}KB) exceeds partition size (${(targetPartition.size / 1024).toFixed(1)}KB)`,
+          );
+        }
+        log(
+          `Size Check OK: ${(buffer.length / 1024).toFixed(1)}KB < ${(targetPartition.size / 1024).toFixed(1)}KB`,
+          "success",
+        );
+      }
+    }
+
+    // Label
+    const label = `xpoint-${version}`.substring(0, 20);
+
+    await flashBufferToSlot(
+      esploader,
+      buffer,
+      targetOffset,
+      label,
+      progressId,
+      statusId,
+    );
+
+    // Disconnect serial to allow clean reset
+    await disconnect();
+  } catch (error) {
+    log(`CrossPoint install failed: ${error.message}`, "error");
+    showStatus(statusId, `Failed: ${error.message}`, "error");
+    hideProgress(progressId);
+  }
+}
+
+// Wire up firmware patching buttons
+
+const patchFlashBtn = document.getElementById("patchFlashBtn");
+if (patchFlashBtn) {
+  patchFlashBtn.addEventListener("click", async () => {
+    await patchAndFlash();
+    await disconnect();
+  });
+}
+
+// Wire up CrossPoint button
+const cpBtn = document.getElementById("installCrossPointBtn");
+if (cpBtn) {
+  cpBtn.addEventListener("click", installCrossPoint);
+}
 
 // Expose for usage in other modules (and inline HTML onclicks)
 window.dumpPartition = dumpPartition;
-window.flashPartition = flashPartition; // New
+window.flashPartition = flashPartition;
 
 import {
   FIRMWARE_CONFIG,
@@ -40,15 +182,29 @@ window.setActivePartition = async (slot) => {
   const esploader = window.esploader;
   if (esploader) {
     await setActivePartition(esploader, slot);
+    await disconnect();
   }
 };
 
-window.esploader = null; // Expose for other modules
+window.renamePartition = async (slot, label) => {
+  const esploader = window.esploader;
+  if (esploader) {
+    await renamePartition(esploader, slot, label);
+    await disconnect();
+  }
+};
 
-// Initialize on page load
+window.esploader = null;
+
+// ========================================================================
+// EVENT LISTENERS & INITIALIZATION
+// ========================================================================
 document.addEventListener("DOMContentLoaded", async () => {
   // Load firmware versions list first
   try {
+    // Start fetching CrossPoint info in parallel/background
+    fetchCrossPointInfo();
+
     await loadFirmwareVersions();
 
     // Populate version dropdown
@@ -194,7 +350,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         // Parse target address from hex string value
         const targetOffset = parseInt(slotSelect.value, 16);
         // Find partition by offset
-        const targetPartition = window.partitions.find(p => p.offset === targetOffset);
+        const targetPartition = window.partitions.find(
+          (p) => p.offset === targetOffset,
+        );
 
         if (targetPartition) {
           if (file.size > targetPartition.size) {
@@ -218,7 +376,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const flashOtaBtn = document.getElementById("flashOtaBtn");
   if (flashOtaBtn) {
-    flashOtaBtn.addEventListener("click", flashOta);
+    flashOtaBtn.addEventListener("click", async () => {
+      await flashOta();
+      await disconnect();
+    });
   }
 
   // Wire up NVS button

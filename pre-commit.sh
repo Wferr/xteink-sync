@@ -1,40 +1,49 @@
 #!/usr/bin/env bash
-
-# Runs Python linting & formatting (Ruff) and Python tests.
-
 set -e
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-echo -e "${YELLOW}Running pre-commit checks...${NC}"
+echo -e "${YELLOW}Running all checks...${NC}"
 
-# 1. Python Linting & Formatting (Ruff)
-echo -e "${YELLOW}[1/3] Running Ruff (Lint & Format)...${NC}"
+# 1. JS/HTML Checks
+echo -e "${YELLOW}[1/3] JS Checks (Prettier & Syntax)...${NC}"
+if ! command -v npx >/dev/null 2>&1; then
+    echo "Error: npx not found!"
+    exit 1
+fi
+
+# Format all web assets
+npx -y prettier --write "web/**/*.{js,json,html}" --log-level warn
+
+# Check syntax of all JS files
+find web/js -name "*.js" -exec node --check {} \;
+
+# 2. Python Checks
+echo -e "${YELLOW}[2/3] Python Checks (Ruff)...${NC}"
 if [ -f "venv/bin/ruff" ]; then
     ./venv/bin/ruff check . --fix
     ./venv/bin/ruff format .
-else
+elif command -v ruff >/dev/null 2>&1; then
     ruff check . --fix
     ruff format .
-fi
-
-# 2. Static API Docs (Regenerate to ensure web/api.html is fresh)
-echo -e "${YELLOW}[2/3] Regenerating API docs...${NC}"
-if [ -f "venv/bin/python3" ]; then
-    PYTHONPATH=src ./venv/bin/python3 src/xteink/generate_api_docs.py
 else
-    PYTHONPATH=src python3 src/xteink/generate_api_docs.py
+    echo "Error: Ruff not found!"
+    exit 1
 fi
 
-# 3. Python Tests
-echo -e "${YELLOW}[3/3] Running tests...${NC}"
+# 3. Tests & Docs
+echo -e "${YELLOW}[3/3] Tests & Docs...${NC}"
+CMD_PYTHON="python3"
 if [ -f "venv/bin/python3" ]; then
-    ./venv/bin/python3 -m unittest discover -s tests -p "test_*.py" -v
-else
-    python3 -m unittest discover -s tests -p "test_*.py" -v
+    CMD_PYTHON="./venv/bin/python3"
 fi
 
-echo -e "${GREEN}All checks passed! Proceeding with commit.${NC}"
-git add web/api.html # Ensure regenerated docs are staged
+# Docs
+PYTHONPATH=src $CMD_PYTHON src/xteink/generate_api_docs.py
+
+# Tests
+$CMD_PYTHON -m unittest discover -s tests -p "test_*.py" -v
+
+echo -e "${GREEN}All checks passed!${NC}"

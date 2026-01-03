@@ -1,11 +1,123 @@
-// ========================================================================
-// FIRMWARE PATCHING SYSTEM
-// ========================================================================
-
 import { log, showStatus, updateProgress, hideProgress } from "./utils.js";
 import { FIRMWARE_CONFIG } from "./config.js";
+import { flashBufferToSlot } from "./flash.js";
+import { getActivePartition } from "./ota.js";
+import { getEspLoader } from "./connection.js";
 
 let downloadedFirmware = null;
+
+function updatePatchButtons() {
+  // Check if all required AND enabled patches have values
+  const allRequired = FIRMWARE_CONFIG.patches
+    .filter((p, i) => {
+      const checkbox = document.getElementById(`patchEnable${i}`);
+      return p.required && checkbox && checkbox.checked;
+    })
+    .every((p, i) => {
+      const input = document.getElementById(`patch${i}`);
+      return input && input.value.trim();
+    });
+
+  const hasDownloaded = downloadedFirmware !== null;
+  const isConnected = !!getEspLoader(); // Check connection status for Flash button
+
+  const downloadBtn = document.getElementById("patchDownloadBtn");
+  const flashBtn = document.getElementById("patchFlashBtn");
+  const originalBtn = document.getElementById("downloadOriginalBtn");
+
+  if (downloadBtn) downloadBtn.disabled = !allRequired || !hasDownloaded;
+  if (originalBtn) originalBtn.disabled = !hasDownloaded;
+
+  // Enable Flash button only if connected AND ready
+  if (flashBtn)
+    flashBtn.disabled = !allRequired || !hasDownloaded || !isConnected;
+}
+
+// Patch and Flash
+export async function patchAndFlash() {
+  try {
+    const esploader = getEspLoader();
+    if (!esploader) {
+      showStatus("patchStatus", "Please connect to device first", "error");
+      return;
+    }
+
+    showStatus("patchStatus", "Preparing firmware...", "info");
+    updateProgress("patchProgressBar", 20);
+
+    const patched = await applyPatches(downloadedFirmware);
+
+    // Determine basic version info
+    // Clean up version string: "V3.1.5" -> "v3.1.5", "V3.1.1-EN" -> "v3.1.1-en"
+    let baseLabel = (FIRMWARE_CONFIG.version || "unknown").toLowerCase();
+
+    // Try to detect Lang from filename if not in version
+    if (
+      !baseLabel.includes("en") &&
+      !baseLabel.includes("ch") &&
+      !baseLabel.includes("cn")
+    ) {
+      if (
+        FIRMWARE_CONFIG.filename.includes("CH") ||
+        FIRMWARE_CONFIG.filename.includes("CN")
+      ) {
+        baseLabel += "-ch";
+      } else if (FIRMWARE_CONFIG.filename.includes("EN")) {
+        baseLabel += "-en";
+      }
+    }
+
+    // Determine Mod suffix
+    const activePatches = FIRMWARE_CONFIG.patches.filter((p, i) => {
+      const checkbox = document.getElementById(`patchEnable${i}`);
+      return checkbox && checkbox.checked;
+    });
+
+    let modSuffix = "";
+    if (activePatches.length > 0) {
+      modSuffix = "-mod";
+    }
+
+    // Construct Label (Max 20 chars)
+    // format: version-lang-mod
+    // e.g. v3.1.5-ch-mod
+    let label = `${baseLabel}${modSuffix}`;
+
+    // Truncate if too long (prioritize keeping mod suffix)
+    if (label.length > 20) {
+      if (modSuffix) {
+        const allowedBase = 20 - modSuffix.length;
+        label = baseLabel.substring(0, allowedBase) + modSuffix;
+      } else {
+        label = label.substring(0, 20);
+      }
+    }
+
+    log(`Generated boot label: ${label}`, "info");
+
+    // Determine Inactive Slot
+    const { inactiveSlot } = await getActivePartition(esploader);
+    const targetOffset = inactiveSlot === 0 ? 0x10000 : 0x650000;
+
+    log(
+      `Targeting inactive slot: app${inactiveSlot} (0x${targetOffset.toString(16)})`,
+      "info",
+    );
+
+    await flashBufferToSlot(
+      esploader,
+      patched,
+      targetOffset,
+      label,
+      "patchProgressBar",
+      "patchStatus",
+    );
+  } catch (error) {
+    log(`Patch & Flash failed: ${error.message}`, "error");
+    showStatus("patchStatus", `Failed: ${error.message}`, "error");
+    hideProgress("patchProgressBar");
+  }
+}
 
 // ESP32 checksum recalculation
 async function fixESP32Checksums(content) {
@@ -123,27 +235,6 @@ export function initPatchUI() {
       input.addEventListener("input", updatePatchButtons);
     }
   });
-}
-
-function updatePatchButtons() {
-  // Check if all required AND enabled patches have values
-  const allRequired = FIRMWARE_CONFIG.patches
-    .filter((p, i) => {
-      const checkbox = document.getElementById(`patchEnable${i}`);
-      return p.required && checkbox && checkbox.checked;
-    })
-    .every((p, i) => {
-      const input = document.getElementById(`patch${i}`);
-      return input && input.value.trim();
-    });
-
-  const hasDownloaded = downloadedFirmware !== null;
-
-  const downloadBtn = document.getElementById("patchDownloadBtn");
-  const originalBtn = document.getElementById("downloadOriginalBtn");
-
-  if (downloadBtn) downloadBtn.disabled = !allRequired || !hasDownloaded;
-  if (originalBtn) originalBtn.disabled = !hasDownloaded;
 }
 
 // Reset downloaded firmware
@@ -389,7 +480,7 @@ export async function patchAndDownload() {
     // Generate filename from patches
     let filenameSuffix = "";
     const patchInputs = document.querySelectorAll("#patchInputs input");
-    patchInputs.forEach(input => {
+    patchInputs.forEach((input) => {
       if (input.value) {
         // Sanitize value for filename
         const safeValue = input.value.replace(/[^a-zA-Z0-9-._]/g, "_");
@@ -443,5 +534,3 @@ export function downloadOriginal() {
 
   log(`Downloaded original: ${a.download}`, "success");
 }
-
-

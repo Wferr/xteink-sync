@@ -1,0 +1,10 @@
+{
+  "version": "V3.1.1-EN",
+  "filename": "V3.1.1-EN.bin",
+  "size": 6372016,
+  "url": "http://gotaserver.xteink.com/api/download/ESP32C3/V3.1.1/V3.1.1-EN.bin",
+  "checksums": {
+    "sha256": "7e8acf24dfc7e9225e23dea7d8275d5d3589c66698426d4b7fcde0594086b6b7"
+  },
+  "patches": []
+}

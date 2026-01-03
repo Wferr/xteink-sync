@@ -126,7 +126,10 @@ export async function getActivePartition(esploader) {
   const uint8Data = new Uint8Array(data);
 
   const entry1Seq = new DataView(uint8Data.buffer, 0, 4).getUint32(0, true);
-  const entry2Seq = new DataView(uint8Data.buffer, 0x1000, 4).getUint32(0, true);
+  const entry2Seq = new DataView(uint8Data.buffer, 0x1000, 4).getUint32(
+    0,
+    true,
+  );
 
   // Higher sequence number = active slot
   const activeSlot = entry1Seq > entry2Seq ? 0 : 1;
@@ -251,11 +254,15 @@ export async function readOtaData(esploader) {
     const entry1Valid =
       entry1Seq !== 0xffffffff &&
       entry1CrcValid &&
-      (getOtaState(entry1State) === "valid" || getOtaState(entry1State) === "pending_new" || getOtaState(entry1State) === "new");
+      (getOtaState(entry1State) === "valid" ||
+        getOtaState(entry1State) === "pending_new" ||
+        getOtaState(entry1State) === "new");
     const entry2Valid =
       entry2Seq !== 0xffffffff &&
       entry2CrcValid &&
-      (getOtaState(entry2State) === "valid" || getOtaState(entry2State) === "pending_new" || getOtaState(entry2State) === "new");
+      (getOtaState(entry2State) === "valid" ||
+        getOtaState(entry2State) === "pending_new" ||
+        getOtaState(entry2State) === "new");
 
     if (entry1Valid && entry2Valid) {
       activeSlot = entry1Seq > entry2Seq ? 0 : 1;
@@ -294,7 +301,10 @@ export async function readOtaData(esploader) {
             <td><span style="color: ${state1Color}; font-weight: 500;">${state1}</span></td>
             <td><code>${entry1CrcDisplay.toString(16).padStart(8, "0")}</code></td>
             <td><strong style="color: ${entry1CrcValid ? "#28a745" : "#dc3545"};">${entry1CrcValid ? "Yes" : "No"}</strong></td>
-            <td>${activeSlot !== 0 && entry1Valid ? '<button class="button outline" onclick="setActivePartition(0)">Set Active</button>' : "-"}</td>
+            <td>
+              ${activeSlot === 0 ? '<button class="button success" disabled>Active</button>' : entry1Valid ? '<button class="button primary" onclick="setActivePartition(0)">Set Active</button>' : ""}
+              ${entry1Valid ? `<button class="button" onclick="renamePartition(0, '${entry1Label || ""}')">Rename</button>` : ""}
+            </td>
         </tr>`;
 
     // app1 row
@@ -306,10 +316,11 @@ export async function readOtaData(esploader) {
             <td><span style="color: ${state2Color}; font-weight: 500;">${state2}</span></td>
             <td><code>${entry2CrcDisplay.toString(16).padStart(8, "0")}</code></td>
             <td><strong style="color: ${entry2CrcValid ? "#28a745" : "#dc3545"};">${entry2CrcValid ? "Yes" : "No"}</strong></td>
-            <td>${activeSlot !== 1 && entry2Valid ? '<button class="button outline" onclick="setActivePartition(1)">Set Active</button>' : "-"}</td>
+            <td>
+              ${activeSlot === 1 ? '<button class="button success" disabled>Active</button>' : entry2Valid ? '<button class="button primary" onclick="setActivePartition(1)">Set Active</button>' : ""}
+              ${entry2Valid ? `<button class="button" onclick="renamePartition(1, '${entry2Label || ""}')">Rename</button>` : ""}
+            </td>
         </tr>`;
-
-
 
     html += "</tbody></table>";
 
@@ -334,9 +345,12 @@ export async function readOtaData(esploader) {
       otaSlotSelect.value = "0x" + targetOffset.toString(16);
 
       // Disable the active slot option to enforce safety
-      Array.from(otaSlotSelect.options).forEach(opt => {
+      Array.from(otaSlotSelect.options).forEach((opt) => {
         const optVal = parseInt(opt.value, 16);
-        if ((activeSlot === 0 && optVal === 0x10000) || (activeSlot === 1 && optVal === 0x650000)) {
+        if (
+          (activeSlot === 0 && optVal === 0x10000) ||
+          (activeSlot === 1 && optVal === 0x650000)
+        ) {
           opt.disabled = true;
           opt.text += " (Active - Do not overwrite)";
         } else {
@@ -350,14 +364,19 @@ export async function readOtaData(esploader) {
   }
 }
 
-// Set boot partition (Internal logic, no UI/Confirm)
-export async function setBootPartition(esploader, targetSlot, label = "") {
+// Update OTA entry (Internal logic)
+export async function updateOtaEntry(
+  esploader,
+  targetSlot,
+  label = null,
+  setActive = true,
+) {
   try {
-    log(`Setting app${targetSlot} as active partition...`, "warning");
-
-    // ... (Reading existing data)
+    const action = setActive ? "Setting active" : "Updating";
+    log(`${action} partition app${targetSlot}...`, "info");
 
     const otadataOffset = 0xe000;
+    // Read current sector to preserve data
     const data = await esploader.readFlash(otadataOffset, 0x2000);
     const uint8Data = new Uint8Array(data);
 
@@ -368,86 +387,83 @@ export async function setBootPartition(esploader, targetSlot, label = "") {
       true,
     );
 
-    // Create new otadata entry following ESP-IDF format
-    const newOtaData = new Uint8Array(0x2000);
-    newOtaData.fill(0xff); // Fill with 0xFF (erased flash state)
-
-    // PRESERVE INACTIVE SLOT:
-    // Copy the data of the *other* slot so we don't wipe it out.
-    // This allows both slots to eventually show as "Valid" (Normal/Healthy state).
-    const inactiveSlot = targetSlot === 0 ? 1 : 0;
-    const inactiveOffset = inactiveSlot * 0x1000;
-    // Copy 32 bytes (struct size) of the inactive slot
-    newOtaData.set(uint8Data.slice(inactiveOffset, inactiveOffset + 32), inactiveOffset);
-
-    // Calculate next sequence number, ignoring invalid 0xFFFFFFFF
+    // Calculate max sequence number
     let maxSeq = 0;
     if (entry1Seq !== 0xffffffff) maxSeq = Math.max(maxSeq, entry1Seq);
     if (entry2Seq !== 0xffffffff) maxSeq = Math.max(maxSeq, entry2Seq);
 
-    // If both invalid, start at 1. Otherwise increment max.
-    const newSeq = maxSeq + 1;
-    const offset = targetSlot * 0x1000;
+    // Determine new sequence number
+    let newSeq;
+    if (setActive) {
+      newSeq = maxSeq + 1;
+    } else {
+      // Reuse existing sequence number to maintain order
+      const currentSeq = targetSlot === 0 ? entry1Seq : entry2Seq;
+      if (currentSeq === 0xffffffff) {
+        // If target has no valid sequence, allow it to be initialized but stay inactive
+        // activeSlot has maxSeq. We want newSeq < maxSeq.
+        // If maxSeq is 0 (both empty), start with 1.
+        newSeq = maxSeq > 0 ? maxSeq - 1 : 1;
+      } else {
+        newSeq = currentSeq;
+      }
+    }
+
+    // Construct new 4KB sector for the TARGET slot only
+    const sectorData = new Uint8Array(0x1000);
+    sectorData.fill(0xff);
+
+    // If we are reusing the sector (inactive rename), we might want to copy other fields?
+    // But we are reconstructing the entry from scratch essentially.
 
     // Write ota_seq (offset 0-3)
-    new DataView(newOtaData.buffer, offset, 4).setUint32(0, newSeq, true);
-
-    // Write ota_seq (offset 0-3)
-    new DataView(newOtaData.buffer, offset, 4).setUint32(0, newSeq, true);
+    new DataView(sectorData.buffer, 0, 4).setUint32(0, newSeq, true);
 
     // Write seq_label (offset 4-23)
-    if (label) {
+    if (label !== null) {
       const labelBytes = new TextEncoder().encode(label.substring(0, 20));
-      newOtaData.set(labelBytes, offset + 4);
+      sectorData.set(labelBytes, 4);
+    } else {
+      // PRESERVE EXISTING LABEL
+      const oldOffset = targetSlot * 0x1000;
+      sectorData.set(uint8Data.slice(oldOffset + 4, oldOffset + 24), 4);
     }
-    // else it stays 0xFF (preserved from inactivity copy if implied? No, wait)
-    // Actually, above we COPIED the inactive slot data. 
-    // If we want to write a NEW label, we overrwite it.
-    // If we want to clear it (if label is empty), we should probably set it to 0s or 0xFFs?
-    // Let's assume if label is provided (passed), we use it. 
-    // If not passed (empty string), maybe we leave it as 0xFF?
-    // But we are constructing `newOtaData` which is filled with 0xFF initially.
-    // Then we copied the INACTIVE slot data to the INACTIVE slot offset.
-    // The target slot offset is still 0xFF. 
-    // So if label is provided, we write it. If not, it stays 0xFF. Correct.
 
     // Write ota_state = ESP_OTA_IMG_VALID (offset 24-27)
-    // User requested to mark as valid immediately instead of pending verification
-    new DataView(newOtaData.buffer, offset + 24, 4).setUint32(
-      0,
-      0x00000002, // ESP_OTA_IMG_VALID
-      true,
-    );
+    new DataView(sectorData.buffer, 24, 4).setUint32(0, 0x00000002, true);
 
-    // Calculate and write CRC32 of ota_seq field (offset 28-31)
-    const crc = calculateCRC32(newOtaData.slice(offset, offset + 4));
-    new DataView(newOtaData.buffer, offset + 28, 4).setUint32(0, crc, true);
+    // Calculate CRC32 of ota_seq (offset 0-3 of sector)
+    const crc = calculateCRC32(sectorData.slice(0, 4));
+    new DataView(sectorData.buffer, 28, 4).setUint32(0, crc, true);
 
-    const binaryString = uint8ArrayToString(newOtaData);
+    const binaryString = uint8ArrayToString(sectorData);
+    const targetAddress = otadataOffset + targetSlot * 0x1000;
 
+    // Write ONLY the target sector
     await esploader.writeFlash({
-      fileArray: [{ data: binaryString, address: otadataOffset }],
+      fileArray: [{ data: binaryString, address: targetAddress }],
       flashSize: "keep",
       eraseAll: false,
       compress: true,
     });
 
-    log(`Success: Boot partition set to app${targetSlot}`, "success");
-
-    // Refresh OTA data display
-    log("Device reset command sent. Please press RESET then POWER button to reboot.", "success");
+    log(
+      `Success: app${targetSlot} updated (Seq: ${newSeq}). Rebooting...`,
+      "success",
+    );
+    // Explicitly instruct user to manual reset as software reset might not suffice for OTA latching
+    alert(
+      "Success! Please manually RESET the device (Press Reset button, then Power button) to apply changes.",
+    );
+    // Always reboot to reload OTA data
   } catch (error) {
-    log(`Failed to set active partition: ${error.message}`, "error");
-    throw error; // Re-throw to caller
+    log(`Failed to update OTA entry: ${error.message}`, "error");
+    throw error;
   }
 }
 
 // UI Wrapper for Manual Action
 export async function setActivePartition(esploader, targetSlot) {
-  let label = prompt("Enter a label for this partition (optional):", "");
-  if (label === null) return; // User cancelled prompt? No, user cancelled set active?
-  // If user hits cancel on prompt, maybe they didn't mean to set active.
-
   if (
     !confirm(
       `Switch boot partition to app${targetSlot}?\n\nDevice will boot from app${targetSlot} on next restart.`,
@@ -455,5 +471,25 @@ export async function setActivePartition(esploader, targetSlot) {
   ) {
     return;
   }
-  await setBootPartition(esploader, targetSlot, label || "");
+  // Pass null to preserve existing label, True to set Active
+  await updateOtaEntry(esploader, targetSlot, null, true);
+}
+
+// Rename Action
+export async function renamePartition(esploader, targetSlot, currentLabel) {
+  let label = prompt(
+    `Enter new label for app${targetSlot}:`,
+    currentLabel || "",
+  );
+  if (label === null) return;
+
+  if (
+    !confirm(
+      `Rename app${targetSlot} to "${label}"?\n\nDevice will reboot to apply changes.`,
+    )
+  ) {
+    return;
+  }
+  // False = Do not force active (Reuse sequence number)
+  await updateOtaEntry(esploader, targetSlot, label, false);
 }

@@ -2,7 +2,13 @@
 // BACKUP AND RESTORE OPERATIONS
 // ========================================================================
 
-import { log, showStatus, updateProgress, hideProgress, uint8ArrayToString } from "./utils.js";
+import {
+  log,
+  showStatus,
+  updateProgress,
+  hideProgress,
+  uint8ArrayToString,
+} from "./utils.js";
 import { getEspLoader } from "./connection.js";
 
 // Full backup

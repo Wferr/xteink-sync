@@ -2,9 +2,89 @@
 // FLASH OPERATIONS - OTA and LittleFS
 // ========================================================================
 
-import { log, showStatus, updateProgress, hideProgress, uint8ArrayToString } from "./utils.js";
+import {
+  log,
+  showStatus,
+  updateProgress,
+  hideProgress,
+  uint8ArrayToString,
+} from "./utils.js";
 import { getEspLoader } from "./connection.js";
-import { readOtaData, setBootPartition } from "./ota.js";
+import { readOtaData, updateOtaEntry } from "./ota.js";
+
+// Flash OTA
+// Flash Buffer to Slot
+export async function flashBufferToSlot(
+  esploader,
+  buffer,
+  offset,
+  label,
+  progressBarId,
+  statusId,
+) {
+  try {
+    log(`Flashing buffer to 0x${offset.toString(16)}...`, "warning");
+    if (statusId) showStatus(statusId, "Flashing...", "info");
+
+    const binaryString = uint8ArrayToString(buffer);
+
+    await esploader.writeFlash({
+      fileArray: [{ data: binaryString, address: offset }],
+      flashSize: "keep",
+      eraseAll: false,
+      compress: true,
+      reportProgress: (idx, written, total) => {
+        if (progressBarId)
+          updateProgress(progressBarId, Math.round((written / total) * 100));
+      },
+    });
+
+    log("Flash complete!", "success");
+    if (statusId)
+      showStatus(
+        statusId,
+        "Flash complete! Updating boot partition...",
+        "info",
+      );
+
+    // Automatically set as active
+    const targetSlot = offset === 0x10000 ? 0 : 1;
+    await updateOtaEntry(esploader, targetSlot, label, true);
+
+    log(
+      "Flash & activation complete! Please press RESET then POWER button to reboot.",
+      "success",
+    );
+    if (statusId)
+      showStatus(
+        statusId,
+        "Update complete! Press RESET then POWER button.",
+        "success",
+      );
+
+    // Soft reset
+    try {
+      await esploader.hardReset();
+      log("Soft reset command sent (if supported).", "info");
+    } catch (e) {
+      log(
+        "Auto-reset failed. Please press the Reset button manually.",
+        "warning",
+      );
+    }
+
+    if (progressBarId) hideProgress(progressBarId);
+
+    // Refresh OTA data display
+    await readOtaData(esploader);
+  } catch (error) {
+    log(`Flash failed: ${error.message}`, "error");
+    if (statusId)
+      showStatus(statusId, `Flash failed: ${error.message}`, "error");
+    if (progressBarId) hideProgress(progressBarId);
+    throw error;
+  }
+}
 
 // Flash OTA
 export async function flashOta() {
@@ -24,53 +104,22 @@ export async function flashOta() {
 
   try {
     const file = fileInput.files[0];
-    log(`Flashing OTA to 0x${offset.toString(16)}...`, "warning");
-    showStatus("otaStatus", "Flashing OTA update...", "info");
-
     const arrayBuffer = await file.arrayBuffer();
     const data = new Uint8Array(arrayBuffer);
 
-    // Convert to binary string safely
-    const binaryString = uint8ArrayToString(data);
-
-    await esploader.writeFlash({
-      fileArray: [{ data: binaryString, address: offset }],
-      flashSize: "keep",
-      eraseAll: false,
-      compress: true,
-      reportProgress: (idx, written, total) => {
-        updateProgress("otaProgressBar", Math.round((written / total) * 100));
-      },
-    });
-
-    log("OTA flash complete!", "success");
-    showStatus("otaStatus", "OTA flashed! Updating boot partition...", "info");
-
-    // Automatically set as active
-    const targetSlot = offset === 0x10000 ? 0 : 1;
     const labelInput = document.getElementById("otaLabel");
     const label = labelInput ? labelInput.value : "";
-    await setBootPartition(esploader, targetSlot, label);
 
-    log("OTA flash & activation complete! Please press RESET then POWER button to reboot.", "success");
-    showStatus("otaStatus", "Update complete! Press RESET then POWER button.", "success");
-
-    // Soft reset
-    try {
-      await esploader.hardReset();
-      log("Soft reset command sent (if supported).", "info");
-    } catch (e) {
-      log("Auto-reset failed. Please press the Reset button manually.", "warning");
-    }
-
-    hideProgress("otaProgressBar");
-
-    // Refresh OTA data display
-    await readOtaData(esploader);
+    await flashBufferToSlot(
+      esploader,
+      data,
+      offset,
+      label,
+      "otaProgressBar",
+      "otaStatus",
+    );
   } catch (error) {
-    log(`OTA flash failed: ${error.message}`, "error");
-    showStatus("otaStatus", `Flash failed: ${error.message}`, "error");
-    hideProgress("otaProgressBar");
+    // Error handled in flashBufferToSlot but re-caught here for safety or specific OTA UI logic if needed
   }
 }
 

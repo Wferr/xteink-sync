@@ -4,8 +4,13 @@
       "id": "v3.1.5",
       "name": "V3.1.5",
       "description": "ESP32C3 2-CH-X4 Firmware",
-      "file": "v3.1.5.json",
       "default": true
+    },
+    {
+      "id": "v3.1.1-en",
+      "name": "V3.1.1-EN",
+      "description": "ESP32C3 English Firmware (No Patches)",
+      "default": false
     }
   ],
   "notes": "Add new firmware versions here. Set 'default: true' for the version to load automatically."

@@ -76,7 +76,7 @@ export function calculateCRC32(data) {
 
 /**
  * Helper to convert Uint8Array to binary string in chunks to avoid stack overflow
- * @param {Uint8Array} u8Array 
+ * @param {Uint8Array} u8Array
  * @returns {string}
  */
 export function uint8ArrayToString(u8Array) {
@@ -88,4 +88,3 @@ export function uint8ArrayToString(u8Array) {
   }
   return binStr;
 }
-

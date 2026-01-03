@@ -28,7 +28,7 @@ export async function connect(ESPLoader, Transport) {
       transport: transport,
       baudrate: baudrate,
       terminal: {
-        clean() { },
+        clean() {},
         writeLine(data) {
           log(data);
           // Extract MAC address from log
