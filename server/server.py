@@ -8,7 +8,10 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import tomllib
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -753,6 +756,7 @@ def create_app():
                 )
 
             content = await file.read()
+            await file.close()
 
             # Generate task_id upfront
             task_id = uuid.uuid4().hex
