@@ -57,7 +57,7 @@ def generate_static_swagger(output_path: str = "web/api.html"):
     with open(out_file, "w", encoding="utf-8") as f:
         f.write(html_content)
 
-    print(f"✅ Static API documentation generated at: {out_file}")
+    print(f"Static API documentation generated at: {out_file}")
 
 
 if __name__ == "__main__":
