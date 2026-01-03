@@ -40,6 +40,7 @@ class TestServerAPI(unittest.TestCase):
 
         server.DATA_DIR.mkdir(exist_ok=True)
         server.FILES_DIR.mkdir(exist_ok=True)
+        server.TOKENS_FILE = cls.tmp_data_dir / "tokens.json"
 
         with open(server.TASKS_FILE, "w") as f:
             json.dump({}, f)
@@ -172,5 +173,264 @@ class TestServerAPI(unittest.TestCase):
         self.assertEqual(updated_tasks[device_id][0]["status"], "completed")
 
 
+class TestServerAuthAPI(unittest.TestCase):
+    """Tests specifically for Authentication"""
+
+    @classmethod
+    def setUpClass(cls):
+        # Setup temporary data directory
+        cls.tmp_data_dir = Path(tempfile.mkdtemp())
+
+        # Save original paths
+        cls.orig_data_dir = server.DATA_DIR
+        cls.orig_tokens_file = server.TOKENS_FILE
+
+        # Override paths for testing
+        server.DATA_DIR = cls.tmp_data_dir
+        server.TOKENS_FILE = cls.tmp_data_dir / "tokens.json"
+
+        server.DATA_DIR.mkdir(exist_ok=True)
+
+        # ENABLE AUTH
+        cls.orig_enable_auth = server.ENABLE_AUTH
+        server.ENABLE_AUTH = True
+        server.ACCOUNTS = [{"email": "test@example.com", "password": "pass"}]
+
+        cls.port = 8002
+        cls.app = server.create_app()
+        cls.config = uvicorn.Config(app=cls.app, host="127.0.0.1", port=cls.port)
+        cls.server = uvicorn.Server(cls.config)
+        cls.server_thread = threading.Thread(target=cls.server.run, daemon=True)
+        cls.server_thread.start()
+        time.sleep(1)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.should_exit = True
+        cls.server_thread.join(timeout=5)
+        shutil.rmtree(cls.tmp_data_dir)
+
+        # Restore globals
+        server.DATA_DIR = cls.orig_data_dir
+        server.TOKENS_FILE = cls.orig_tokens_file
+        server.ENABLE_AUTH = cls.orig_enable_auth
+
+    def setUp(self):
+        self.client = XteinkClient(base_url=f"http://127.0.0.1:{self.port}")
+        # Reset tokens
+        with open(server.TOKENS_FILE, "w") as f:
+            json.dump({}, f)
+
+    def test_unauthenticated_access_fails(self):
+        """Test that endpoints fail without login"""
+        # Should raise HTTPError 401
+        with self.assertRaises(Exception) as cm:
+            # binding endpoint is protected
+            self.client.get_device_binding()
+
+        # We can't easily check status code with the current client wrapping,
+        # but it should raise valid HTTP error
+        self.assertIn("HTTP Error 401", str(cm.exception))
+
+    def test_login_flow(self):
+        """Test login and subsequent access"""
+        # 1. Login
+        resp = self.client.login("test@example.com", "pass")
+        self.assertTrue(resp.success)
+        self.assertIsNotNone(resp.access_token)
+
+        # 2. Access protected endpoint
+        binding = self.client.get_device_binding()
+        self.assertTrue(binding.success)
+
+    def test_invalid_login(self):
+        """Test login with wrong password"""
+        from urllib.error import HTTPError
+
+        with self.assertRaises(HTTPError):
+            self.client.login("test@example.com", "wrong")
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestServerEnrollment(unittest.TestCase):
+    """Tests for Device Enrollment Control"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp_data_dir = Path(tempfile.mkdtemp())
+
+        # Override paths
+        cls.orig_data_dir = server.DATA_DIR
+        cls.orig_devices_file = server.DEVICES_FILE
+        server.DATA_DIR = cls.tmp_data_dir
+        server.DEVICES_FILE = cls.tmp_data_dir / "devices.json"
+
+        server.DATA_DIR.mkdir(exist_ok=True)
+
+        # DISABLE AUTO ENROLLMENT
+        cls.orig_auto_reg = server.AUTO_REGISTER_DEVICES
+        server.AUTO_REGISTER_DEVICES = False
+
+        cls.port = 8003
+        cls.app = server.create_app()
+        cls.config = uvicorn.Config(app=cls.app, host="127.0.0.1", port=cls.port)
+        cls.server = uvicorn.Server(cls.config)
+        cls.server_thread = threading.Thread(target=cls.server.run, daemon=True)
+        cls.server_thread.start()
+        time.sleep(1)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.should_exit = True
+        cls.server_thread.join(timeout=5)
+        shutil.rmtree(cls.tmp_data_dir)
+
+        # Restore globals
+        server.DATA_DIR = cls.orig_data_dir
+        server.DEVICES_FILE = cls.orig_devices_file
+        server.AUTO_REGISTER_DEVICES = cls.orig_auto_reg
+
+    def setUp(self):
+        self.client = XteinkClient(base_url=f"http://127.0.0.1:{self.port}")
+        with open(server.DEVICES_FILE, "w") as f:
+            json.dump([], f)
+
+    def test_new_device_rejected(self):
+        """Test that a new device is rejected when auto-enroll is False"""
+        from urllib.error import HTTPError
+
+        with self.assertRaises(HTTPError) as cm:
+            self.client.bind_device("unknown_dev", "ESP32", "1.0")
+
+        self.assertIn("HTTP Error 403", str(cm.exception))
+
+    def test_existing_device_allowed(self):
+        """Test that a pre-registered device is allowed"""
+        # Pre-register device directly in DB with all required fields for Device model
+        device_id = "known_dev"
+        device = {
+            "id": "uuid-123",
+            "device_id": device_id,
+            "brand": "xteink",
+            "device_type": "ESP32",
+            "version": "1.0",
+            "user_id": "local_user",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+        }
+        with open(server.DEVICES_FILE, "w") as f:
+            json.dump([device], f)
+
+        # Try binding
+        try:
+            self.client.bind_device(device_id, "ESP32", "1.0")
+        except Exception as e:
+            self.fail(f"Bind failed for known device: {e}")
+
+        # Verify timestamps updated
+        updated = server.load_devices()
+        self.assertEqual(len(updated), 1)
+
+
+class TestServerCombined(unittest.TestCase):
+    """Tests for Combined Authentication and Enrollment Control"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp_data_dir = Path(tempfile.mkdtemp())
+
+        # Override paths
+        cls.orig_data_dir = server.DATA_DIR
+        cls.orig_devices_file = server.DEVICES_FILE
+        cls.orig_tokens_file = server.TOKENS_FILE
+
+        server.DATA_DIR = cls.tmp_data_dir
+        server.DEVICES_FILE = cls.tmp_data_dir / "devices.json"
+        server.TOKENS_FILE = cls.tmp_data_dir / "tokens.json"
+
+        server.DATA_DIR.mkdir(exist_ok=True)
+        with open(server.TOKENS_FILE, "w") as f:
+            json.dump({}, f)
+
+        # ENABLE BOTH: AUTH ON, AUTO-ENROLL OFF
+        cls.orig_enable_auth = server.ENABLE_AUTH
+        cls.orig_auto_reg = server.AUTO_REGISTER_DEVICES
+
+        server.ENABLE_AUTH = True
+        server.AUTO_REGISTER_DEVICES = False
+        server.ACCOUNTS = [{"email": "combo@test.com", "password": "pass"}]
+
+        cls.port = 8004
+        cls.app = server.create_app()
+        cls.config = uvicorn.Config(app=cls.app, host="127.0.0.1", port=cls.port)
+        cls.server = uvicorn.Server(cls.config)
+        cls.server_thread = threading.Thread(target=cls.server.run, daemon=True)
+        cls.server_thread.start()
+        time.sleep(1)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.should_exit = True
+        cls.server_thread.join(timeout=5)
+        shutil.rmtree(cls.tmp_data_dir)
+
+        # Restore globals
+        server.DATA_DIR = cls.orig_data_dir
+        server.DEVICES_FILE = cls.orig_devices_file
+        server.TOKENS_FILE = cls.orig_tokens_file
+        server.ENABLE_AUTH = cls.orig_enable_auth
+        server.AUTO_REGISTER_DEVICES = cls.orig_auto_reg
+
+    def setUp(self):
+        self.client = XteinkClient(base_url=f"http://127.0.0.1:{self.port}")
+        with open(server.DEVICES_FILE, "w") as f:
+            json.dump([], f)
+
+    def test_auth_blocks_first(self):
+        """Test that unauthenticated requests fail even if enrollment logic would follow"""
+        from urllib.error import HTTPError
+
+        with self.assertRaises(HTTPError) as cm:
+            self.client.get_device_binding()
+        self.assertEqual(cm.exception.code, 401)
+
+    def test_auth_on_enroll_forbidden(self):
+        """Test authenticated user but unknown device enrollment is forbidden"""
+        # 1. Login
+        self.client.login("combo@test.com", "pass")
+
+        # 2. Try bind new device
+        from urllib.error import HTTPError
+
+        with self.assertRaises(HTTPError) as cm:
+            self.client.bind_device("new_combo_dev", "ESP32", "1.0")
+        self.assertEqual(cm.exception.code, 403)
+
+    def test_auth_on_known_device_allowed(self):
+        """Test authenticated user can bind known device"""
+        # 1. Pre-register
+        device_id = "known_combo"
+        device = {
+            "id": "uuid-combo",
+            "device_id": device_id,
+            "brand": "xteink",
+            "device_type": "ESP32",
+            "version": "1.0",
+            "user_id": "local_user",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+        }
+        with open(server.DEVICES_FILE, "w") as f:
+            json.dump([device], f)
+
+        # 2. Login
+        self.client.login("combo@test.com", "pass")
+
+        # 3. Bind
+        try:
+            self.client.bind_device(device_id, "ESP32", "1.0")
+        except Exception as e:
+            self.fail(f"Bind failed for known combo device: {e}")

@@ -44,6 +44,7 @@ fi
 PYTHONPATH=src $CMD_PYTHON src/xteink/generate_api_docs.py
 
 # Tests
-$CMD_PYTHON -m unittest discover -s tests -p "test_*.py" -v
+$CMD_PYTHON -m coverage run -m unittest discover -s tests -p "test_*.py"
+$CMD_PYTHON -m coverage report -m
 
 echo -e "${GREEN}All checks passed!${NC}"

@@ -1,0 +1,34 @@
+# Xteink Server Configuration
+
+[server]
+# Network Binding
+host = "0.0.0.0"
+port = 8000
+# Allow or deny new devices from automatically registering
+auto_register_devices = true
+
+[storage]
+# File Storage Limits
+max_file_size = "100MB"
+
+[firmware]
+# Mock Firmware Update Server
+enabled = false
+port = 5000
+
+[auth]
+# Authentication Settings
+enabled = false
+
+# Multiple accounts can be defined by repeating [[auth.users]]
+
+[[auth.users]]
+email = "admin@example.com"
+password = "admin"
+nickname = "Administrator"
+
+# Example of a second user (uncomment to use)
+# [[auth.users]]
+# email = "guest@example.com"
+# password = "guest"
+# nickname = "Guest User"

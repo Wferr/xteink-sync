@@ -8,10 +8,13 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import tomllib
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 # Configuration
 BASE_DIR = Path(__file__).parent
@@ -19,6 +22,7 @@ DATA_DIR = BASE_DIR / "data"
 TASKS_FILE = DATA_DIR / "tasks.json"
 DEVICES_FILE = DATA_DIR / "devices.json"
 FILES_DIR = DATA_DIR / "files"
+TOKENS_FILE = DATA_DIR / "tokens.json"
 
 
 def parse_size(size_str: Optional[str]) -> int:
@@ -48,21 +52,62 @@ def parse_size(size_str: Optional[str]) -> int:
 
 # Configuration Loading
 def load_server_config() -> Dict[str, Any]:
-    config_path = BASE_DIR / "config.json"
+    config_path = BASE_DIR / "config.toml"
     config = {
         "host": "0.0.0.0",
         "port": 8000,
+        "auto_register_devices": True,
         "enable_firmware_server": False,
         "firmware_port": 5000,
         "max_file_size": "100MB",
+        "enable_auth": False,
+        "accounts": [
+            {
+                "email": "admin@example.com",
+                "password": "admin",
+                "nickname": "Administrator",
+            }
+        ],
     }
     if config_path.exists():
         try:
-            with open(config_path) as f:
-                loaded_config = json.load(f)
-                config.update(loaded_config)
+            with open(config_path, "rb") as f:
+                toml_data = tomllib.load(f)
+
+                # Flatten TOML structure to match expected config keys
+
+                # [server]
+                if "server" in toml_data:
+                    if "host" in toml_data["server"]:
+                        config["host"] = toml_data["server"]["host"]
+                    if "port" in toml_data["server"]:
+                        config["port"] = toml_data["server"]["port"]
+                    if "auto_register_devices" in toml_data["server"]:
+                        config["auto_register_devices"] = toml_data["server"][
+                            "auto_register_devices"
+                        ]
+
+                # [firmware]
+                if "firmware" in toml_data:
+                    if "enabled" in toml_data["firmware"]:
+                        config["enable_firmware_server"] = toml_data["firmware"]["enabled"]
+                    if "port" in toml_data["firmware"]:
+                        config["firmware_port"] = toml_data["firmware"]["port"]
+
+                # [storage]
+                if "storage" in toml_data:
+                    if "max_file_size" in toml_data["storage"]:
+                        config["max_file_size"] = toml_data["storage"]["max_file_size"]
+
+                # [auth]
+                if "auth" in toml_data:
+                    if "enabled" in toml_data["auth"]:
+                        config["enable_auth"] = toml_data["auth"]["enabled"]
+                    if "users" in toml_data["auth"]:
+                        config["accounts"] = toml_data["auth"]["users"]
+
         except Exception as e:
-            print(f"Error loading config.json: {e}")
+            print(f"Error loading config.toml: {e}")
     return config
 
 
@@ -70,6 +115,74 @@ def load_server_config() -> Dict[str, Any]:
 SERVER_CONFIG = load_server_config()
 MAX_FILE_SIZE_BYTES = parse_size(SERVER_CONFIG.get("max_file_size"))
 MAX_FILE_SIZE_STR = SERVER_CONFIG.get("max_file_size", "100MB")
+ENABLE_AUTH = SERVER_CONFIG.get("enable_auth", False)
+AUTO_REGISTER_DEVICES = SERVER_CONFIG.get("auto_register_devices", True)
+ACCOUNTS = SERVER_CONFIG.get("accounts", [])
+
+
+class User(BaseModel):
+    id: str
+    email: str
+    nickname: Optional[str] = None
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+def load_tokens() -> Dict[str, Dict[str, Any]]:
+    if not TOKENS_FILE.exists():
+        return {}
+    try:
+        with open(TOKENS_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_tokens(tokens: Dict[str, Dict[str, Any]]):
+    with open(TOKENS_FILE, "w") as f:
+        json.dump(tokens, f, indent=2)
+
+
+if not TOKENS_FILE.exists():
+    with open(TOKENS_FILE, "w") as f:
+        json.dump({}, f)
+
+security = HTTPBearer(auto_error=False)
+
+
+async def get_current_user(
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(security),  # noqa: B008
+) -> Optional[User]:
+    """
+    Dependency to get the current authenticated user.
+    If ENABLE_AUTH is False, returns a dummy admin user.
+    If ENABLE_AUTH is True, requires a valid Bearer token.
+    """
+    if not ENABLE_AUTH:
+        # Auth disabled: Return dummy admin
+        return User(id="admin", email="admin@local", nickname="Admin")
+
+    if not creds:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    token = creds.credentials
+    tokens_db = load_tokens()
+
+    # Simple check: is token in DB?
+    # In a real app, we'd check expiration, etc.
+    session = tokens_db.get(token)
+    if not session:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    return User(
+        id=session["user_id"],
+        email=session["email"],
+        nickname=session.get("nickname"),
+    )
+
 
 DATA_DIR.mkdir(exist_ok=True, parents=True)
 FILES_DIR.mkdir(exist_ok=True, parents=True)
@@ -205,6 +318,95 @@ def create_app():
                     )
 
         print(log_msg)
+
+        # AUTHENTICATION: Login
+        if path == "auth/login" and request.method == "POST":
+            try:
+                data = await request.json()
+                login_req = LoginRequest(**data)
+            except Exception:
+                return JSONResponse({"success": False, "error": "Invalid JSON"}, status_code=400)
+
+            # Check credentials against config
+            user_account = next(
+                (
+                    u
+                    for u in ACCOUNTS
+                    if u["email"] == login_req.email and u["password"] == login_req.password
+                ),
+                None,
+            )
+
+            if user_account:
+                # Generate Token
+                new_token = uuid.uuid4().hex
+                user_id = uuid.uuid4().hex
+
+                # Save session
+                tokens = load_tokens()
+                tokens[new_token] = {
+                    "user_id": user_id,
+                    "email": login_req.email,
+                    "nickname": "Admin",
+                    "created_at": int(time.time()),
+                }
+                save_tokens(tokens)
+
+                print(f"LOGIN SUCCESS: {login_req.email}")
+                return {
+                    "success": True,
+                    "access_token": new_token,
+                    "refresh_token": new_token,  # Reuse for simplicity
+                    "user_id": user_id,
+                    "user": {
+                        "id": user_id,
+                        "email": login_req.email,
+                        "nickname": "Admin",
+                        "role": "admin",
+                        "is_active": True,
+                    },
+                }
+            else:
+                print(f"LOGIN FAILED: {login_req.email}")
+                return JSONResponse(
+                    {"success": False, "message": "Invalid credentials"}, status_code=401
+                )
+
+        # Protected Routes Logic
+        # We manually invoke the dependency logic here because we are in a catch-all route
+        # In a standard FastAPI app, we'd put Depends() on the route function.
+        PROTECTED_PATHS = [
+            "api/v1/device/binding",
+            "api/v1/device/tasks",
+            "api/v1/upload",
+            "api/v1/ai/image_resize",
+        ]
+
+        # Check if path starts with any protected path
+        is_protected = any(path.startswith(p) for p in PROTECTED_PATHS)
+
+        # Exception: Allow GET /api/v1/device/tasks without auth for devices?
+        # The prompt implies devices might handle auth or we just need simple account support.
+        # But commonly devices use unique IDs and not user accounts.
+        # However, the plan said "Apply get_current_user dependency to ... /api/v1/device/tasks".
+        # Let's enforce it. If devices break, user can disable auth.
+
+        if is_protected and ENABLE_AUTH:
+            auth_header = request.headers.get("Authorization")
+            token = None
+            if auth_header and auth_header.startswith("Bearer "):
+                token = auth_header.split(" ")[1]
+
+            authorized = False
+            if token:
+                tokens_db = load_tokens()
+                if token in tokens_db:
+                    authorized = True
+
+            if not authorized:
+                return JSONResponse(
+                    {"success": False, "error": "Authentication required"}, status_code=401
+                )
 
         if path == "api/v1/device/tasks" and request.method == "POST":
             try:
@@ -362,7 +564,21 @@ def create_app():
                 )
 
             # Register the device (async, non-blocking)
-            await asyncio.to_thread(register_device, device_id)
+            # Only if auto-register is enabled OR device already exists
+            is_known = is_known_device(device_id)
+
+            if is_known or AUTO_REGISTER_DEVICES:
+                await asyncio.to_thread(register_device, device_id)
+            else:
+                return JSONResponse(
+                    {
+                        "success": False,
+                        "error": (
+                            f"Device {device_id} is not registered and auto-enrollment is disabled."
+                        ),
+                    },
+                    status_code=403,
+                )
 
             # Get the registered device info (async, non-blocking)
             devices = await load_devices_async()
@@ -386,7 +602,9 @@ def create_app():
 
             # AUTO-REGISTER on polling: "Connect" logic
             if device_id and device_id != "all":
-                await asyncio.to_thread(register_device, device_id)
+                is_known = is_known_device(device_id)
+                if is_known or AUTO_REGISTER_DEVICES:
+                    await asyncio.to_thread(register_device, device_id)
 
             # Validate device ID (for list query)
             if device_id and not is_known_device(device_id):
