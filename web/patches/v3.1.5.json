@@ -1,0 +1,46 @@
+{
+  "version": "V3.1.5",
+  "filename": "V3.1.5_2-CH-X4.bin",
+  "url": "http://47.122.74.33:5000/api/download/ESP32C3/V3.1.5/V3.1.5_2-CH-X4.bin",
+  "size": 6279248,
+  "checksums": {
+    "crc32": "2F5E1957",
+    "sha256": "fd86aa91932ec124f0e5fb711a74d1030c59796fec6e28e4b26e0a8ade8c57d1"
+  },
+  "patches": [
+    {
+      "name": "Service API Server",
+      "description": "Main cloud service endpoint",
+      "find": "8.130.157.48",
+      "maxLength": 14,
+      "required": true,
+      "category": "network",
+      "notes": "Primary API IP. Replaces full URLs to ensure consistency with Python script.",
+      "enabled": true,
+      "occurrences": 2,
+      "replacements": [
+        {
+          "find": "http://8.130.157.48:5000/api/v1/sync/check",
+          "template": "http://{value}:5000/api/v1/sync/check",
+          "maxLength": 44
+        },
+        {
+          "find": "http://8.130.157.48:8000/api/v1/",
+          "template": "http://{value}:8000/api/v1/",
+          "maxLength": 36
+        }
+      ]
+    },
+    {
+      "name": "Firmware Update Server",
+      "description": "OTA update endpoint",
+      "find": "47.122.74.33",
+      "maxLength": 15,
+      "required": false,
+      "category": "network",
+      "notes": "OTA firmware update server. Original: 12 chars + 3 null bytes = 15 max. Appears in: http://47.122.74.33:5000/api/check-update",
+      "enabled": false,
+      "occurrences": 2
+    }
+  ]
+}

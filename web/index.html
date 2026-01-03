@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>XTeink ESP32 Web Flasher</title>
+  <link rel="stylesheet" href="https://unpkg.com/chota@0.9.2/dist/chota.min.css" />
+  <style>
+    /* Minimal native overrides usually acceptable or use utility classes */
+    /* Hiding elements behavior */
+    .is-hidden {
+      display: none !important;
+    }
+  </style>
+  <!-- Preload modules for faster loading -->
+  <link rel="modulepreload" href="js/utils.js" />
+  <link rel="modulepreload" href="js/config.js" />
+  <link rel="modulepreload" href="js/ui-helpers.js" />
+  <link rel="modulepreload" href="js/connection.js" />
+  <link rel="modulepreload" href="js/backup.js" />
+  <link rel="modulepreload" href="js/flash.js" />
+  <link rel="modulepreload" href="js/ota.js" />
+  <link rel="modulepreload" href="js/nvs.js" />
+  <link rel="modulepreload" href="js/patching.js" />
+  <link rel="modulepreload" href="js/main.js" />
+</head>
+
+<body>
+  <div class="container">
+    <h1>XTEINK Web Flasher</h1>
+    <p>
+      ESP32-C3 flasher and partition management tool |
+      <a href="api.html" target="_blank">API Reference</a>
+    </p>
+    <!-- Connection -->
+    <fieldset>
+      <h3>Connection</h3>
+      <label for="baudrateSelect">Baud Rate</label>
+      <p class="grouped">
+        <select id="baudrateSelect">
+          <option>115200</option>
+          <option>230400</option>
+          <option>460800</option>
+          <option>921600</option>
+          <option>1500000</option>
+          <option>2000000</option>
+          <option selected>3000000</option>
+        </select>
+        <button class="button primary" id="connectBtn">Connect</button>
+      </p>
+      <p>Device: <code id="chipInfo">Not connected</code></p>
+    </fieldset>
+    <hr />
+
+    <!-- Device Info -->
+    <fieldset id="deviceInfoSection">
+      <h3>Device Information</h3>
+      <h5>
+        Partition Table
+        <span id="partitionTableStatus" style="font-size: 0.8em; margin-left: 1em"></span>
+      </h5>
+      <div id="partitionTableContainer"></div>
+      <hr />
+      <h5>Full System Backup & Restore</h5>
+      <p class="grouped">
+        <button class="button" id="backupBtn">
+          Create Full System Backup
+        </button>
+        <button class="button outline" onclick="document.getElementById('restoreInput').click()">
+          Restore Full System
+        </button>
+      </p>
+      <input type="file" id="restoreInput" accept=".bin" style="display: none" />
+      <progress id="backupProgressBar" class="is-full-width is-hidden" value="0" max="100">
+        0%
+      </progress>
+      <p>Status: <code id="backupStatus">Ready</code></p>
+      <hr />
+
+      <h5>OTA Partition Status</h5>
+      <div id="otaDataContainer"></div>
+      <hr />
+      <h5>NVS Data</h5>
+      <div id="nvsDataContainer">
+        <button id="readNvsBtn">Read NVS Data</button>
+      </div>
+    </fieldset>
+    <hr />
+
+    <!-- Firmware Download & Patching -->
+    <fieldset>
+      <h3>Firmware Download & Patching</h3>
+      <label for="firmwareVersionSelect">Firmware Version</label>
+      <select id="firmwareVersionSelect">
+        <option>Loading...</option>
+      </select>
+
+      <p>Firmware Info: <code id="firmwareInfo">Not Loaded</code></p>
+
+      <p class="grouped">
+        <button class="button primary" id="downloadFirmwareBtn">
+          Load Firmware
+        </button>
+        <button id="btnUploadFirmware">Upload .bin File</button>
+        <input type="file" id="uploadFirmwareFile" accept=".bin" style="display: none" />
+      </p>
+
+      <progress id="patchProgressBar" class="is-full-width is-hidden" value="0" max="100">
+        0%
+      </progress>
+
+      <p>Patch Status: <code id="patchStatus">No work done</code></p>
+      <hr />
+      <h4>Patch Configuration</h4>
+      <p id="patchInputs"></p>
+
+      <p style="margin-top: 1.5rem; margin-bottom: 0.5rem">
+        <button class="button" id="downloadOriginalBtn" disabled>
+          Download Original
+        </button>
+        &nbsp;
+        <button class="button primary" id="patchDownloadBtn" disabled>
+          Patch & Download
+        </button>
+      </p>
+      <p>
+        <small><strong>Note:</strong> After downloading the patched firmware, use the <em>OTA Firmware Management</em>
+          section below to flash it to the non-active slot (e.g., if booting from <code>app0</code>, flash to
+          <code>app1</code>).</small>
+      </p>
+    </fieldset>
+    <hr />
+
+    <!-- OTA -->
+    <fieldset>
+      <h3>OTA Firmware Management</h3>
+      <label for="otaSlotSelect">Target Slot</label>
+      <p class="grouped">
+        <select id="otaSlotSelect">
+          <option value="0x10000">app0 (0x10000)</option>
+          <option value="0x650000">app1 (0x650000)</option>
+        </select>
+        <button id="btnUploadOta">Upload .bin File</button>
+        <input type="file" id="otaFile" accept=".bin" style="display: none" />
+      </p>
+      <p>Selected File: <code id="otaFileName">None</code></p>
+      <p>
+        <input type="text" id="otaLabel" placeholder="Label (max 20 chars)" maxlength="20" style="max-width: 250px;">
+      </p>
+      <p>
+        <button class="button primary" id="flashOtaBtn">Flash OTA</button>
+      </p>
+      <progress id="otaProgressBar" class="is-full-width is-hidden" value="0" max="100">
+        0%
+      </progress>
+      <p>Status: <code id="otaStatus">Ready</code></p>
+    </fieldset>
+    <hr />
+
+    <fieldset>
+      <h3>Console Log</h3>
+      <pre id="consoleLog"></pre>
+    </fieldset>
+  </div>
+
+  <!-- Dependencies -->
+  <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.js"></script>
+  <script src="https://bundle.run/buffer@6.0.3"></script>
+
+  <!-- Main module -->
+  <script type="module" src="js/main.js"></script>
+</body>
+
+</html>

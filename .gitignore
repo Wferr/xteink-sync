@@ -1,0 +1,21 @@
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+venv/
+
+# Sync Server Data
+server/data/
+
+# Archive
+archive/
+
+# Coverage & Cache
+.coverage
+htmlcov/
+.pytest_cache/
+.ruff_cache/

@@ -1,0 +1,12 @@
+{
+  "versions": [
+    {
+      "id": "v3.1.5",
+      "name": "V3.1.5",
+      "description": "ESP32C3 2-CH-X4 Firmware",
+      "file": "v3.1.5.json",
+      "default": true
+    }
+  ],
+  "notes": "Add new firmware versions here. Set 'default: true' for the version to load automatically."
+}
