@@ -83,10 +83,8 @@ async function installCrossPoint() {
     updateProgress(progressId, 30);
 
     // Download
-    // Fix CORS by using API endpoint directly with specific header (bypasses redirect check on client)
-    const binResp = await fetch(firmwareAsset.url, {
-      headers: { Accept: "application/octet-stream" },
-    });
+    const binResp = await fetch(firmwareAsset.browser_download_url);
+
     if (!binResp.ok) throw new Error(`Download failed: ${binResp.status}`);
 
     const blob = await binResp.blob();
