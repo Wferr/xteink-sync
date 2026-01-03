@@ -48,19 +48,15 @@ async function fetchCrossPointInfo() {
   }
 }
 
-async function installCrossPoint() {
-  const statusId = "crossPointStatus";
-  const progressId = "crossPointProgressBar";
-  const esploader = getEspLoader();
-
-  if (!esploader) {
-    showStatus(statusId, "Please connect to device first", "error");
-    return;
-  }
+async function downloadCrossPoint() {
+  const btn = document.getElementById("downloadCrossPointBtn");
+  const originalText = btn ? btn.textContent : "";
 
   try {
-    showStatus(statusId, "Fetching latest release info...", "info");
-    updateProgress(progressId, 10);
+    if (btn) {
+      btn.textContent = "Fetching URL...";
+      btn.disabled = true;
+    }
 
     // Fetch release info
     const releaseUrl =
@@ -69,7 +65,7 @@ async function installCrossPoint() {
     if (!resp.ok) throw new Error(`GitHub API Error: ${resp.status}`);
 
     const releaseData = await resp.json();
-    const version = releaseData.tag_name || "latest"; // e.g. v1.2.3
+    const version = releaseData.tag_name || "latest";
 
     // Find asset
     const firmwareAsset = releaseData.assets.find((a) =>
@@ -79,65 +75,18 @@ async function installCrossPoint() {
       throw new Error("No firmware.bin found in latest release");
 
     log(`Found CrossPoint ${version}: ${firmwareAsset.name}`, "success");
-    showStatus(statusId, `Downloading ${version}...`, "info");
-    updateProgress(progressId, 30);
 
-    // Download
-    const binResp = await fetch(firmwareAsset.browser_download_url);
-
-    if (!binResp.ok) throw new Error(`Download failed: ${binResp.status}`);
-
-    const blob = await binResp.blob();
-    const arrayBuffer = await blob.arrayBuffer();
-    const buffer = new Uint8Array(arrayBuffer);
-
-    showStatus(
-      statusId,
-      `Verified size: ${buffer.length} bytes. Flashing...`,
-      "info",
-    );
-    updateProgress(progressId, 50);
-
-    // Determine target slot
-    const { inactiveSlot } = await getActivePartition(esploader);
-    const targetOffset = inactiveSlot === 0 ? 0x10000 : 0x650000;
-
-    // Verify partition size if table information is available
-    if (window.partitions) {
-      const targetPartition = window.partitions.find(
-        (p) => p.offset === targetOffset,
-      );
-      if (targetPartition) {
-        if (buffer.length > targetPartition.size) {
-          throw new Error(
-            `Firmware size (${(buffer.length / 1024).toFixed(1)}KB) exceeds partition size (${(targetPartition.size / 1024).toFixed(1)}KB)`,
-          );
-        }
-        log(
-          `Size Check OK: ${(buffer.length / 1024).toFixed(1)}KB < ${(targetPartition.size / 1024).toFixed(1)}KB`,
-          "success",
-        );
-      }
-    }
-
-    // Label
-    const label = `xpoint-${version}`.substring(0, 20);
-
-    await flashBufferToSlot(
-      esploader,
-      buffer,
-      targetOffset,
-      label,
-      progressId,
-      statusId,
-    );
-
-    // Disconnect serial to allow clean reset
-    await disconnect();
+    // Manual Download
+    const downloadUrl = firmwareAsset.browser_download_url;
+    window.open(downloadUrl, "_blank");
   } catch (error) {
-    log(`CrossPoint install failed: ${error.message}`, "error");
-    showStatus(statusId, `Failed: ${error.message}`, "error");
-    hideProgress(progressId);
+    log(`Download failed: ${error.message}`, "error");
+    alert(`Download failed: ${error.message}`);
+  } finally {
+    if (btn) {
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }
   }
 }
 
@@ -151,10 +100,10 @@ if (patchFlashBtn) {
   });
 }
 
-// Wire up CrossPoint button
-const cpBtn = document.getElementById("installCrossPointBtn");
-if (cpBtn) {
-  cpBtn.addEventListener("click", installCrossPoint);
+// Wire up CrossPoint buttons
+const downloadCpBtn = document.getElementById("downloadCrossPointBtn");
+if (downloadCpBtn) {
+  downloadCpBtn.addEventListener("click", downloadCrossPoint);
 }
 
 // Expose for usage in other modules (and inline HTML onclicks)
