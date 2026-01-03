@@ -172,6 +172,38 @@ class TestServerAPI(unittest.TestCase):
         updated_tasks = server.load_tasks()
         self.assertEqual(updated_tasks[device_id][0]["status"], "completed")
 
+    def test_image_resize_passthrough(self):
+        """Test image resize passthrough endpoint"""
+        device_id = "test_dev_resize"
+        self.client.bind_device(device_id, "ESP32C3", "V3.1.5")
+        url = "http://example.com/image.jpg"
+        result = self.client.image_resize(url, device_id)
+        self.assertTrue(result.success)
+        self.assertEqual(result.download_url_fs, url)
+
+    def test_task_deduplication(self):
+        """Test that creating the same task twice resets it to pending instead of duplicating"""
+        device_id = "test_dev_dedup"
+        self.client.bind_device(device_id, "ESP32C3", "V3.1.5")
+
+        # Create task 1
+        self.client.create_device_task(device_id, "http://example.com/file", "/file", 100)
+        tasks1 = server.load_tasks().get(device_id, [])
+        self.assertEqual(len(tasks1), 1)
+        task_id = tasks1[0]["task_id"]
+
+        # Mark as completed
+        server_tasks = server.load_tasks()
+        server_tasks[device_id][0]["status"] = "completed"
+        server.save_tasks(server_tasks)
+
+        # Create same task again
+        self.client.create_device_task(device_id, "http://example.com/file", "/file", 100)
+        tasks2 = server.load_tasks().get(device_id, [])
+        self.assertEqual(len(tasks2), 1)
+        self.assertEqual(tasks2[0]["task_id"], task_id)
+        self.assertEqual(tasks2[0]["status"], "pending")
+
 
 class TestServerAuthAPI(unittest.TestCase):
     """Tests specifically for Authentication"""
@@ -242,6 +274,12 @@ class TestServerAuthAPI(unittest.TestCase):
         # 2. Access protected endpoint
         binding = self.client.get_device_binding()
         self.assertTrue(binding.success)
+
+    def test_token_refresh(self):
+        """Test token refresh endpoint"""
+        resp = self.client.refresh_access_token()
+        self.assertTrue(resp.success)
+        self.assertIsNotNone(resp.access_token)
 
     def test_invalid_login(self):
         """Test login with wrong password"""

@@ -208,6 +208,53 @@ class TestServer(unittest.TestCase):
             self.server.DEVICES_FILE = original_devices_file
             Path(temp_devices_file).unlink(missing_ok=True)
 
+    def test_parse_size(self):
+        """Test the parse_size utility function"""
+        # Valid cases
+        self.assertEqual(self.server.parse_size("100MB"), 100 * 1024 * 1024)
+        self.assertEqual(self.server.parse_size("1GB"), 1024 * 1024 * 1024)
+        self.assertEqual(self.server.parse_size("1024"), 1024)
+        self.assertEqual(self.server.parse_size(2048), 2048)
+        self.assertEqual(self.server.parse_size("1.5MB"), int(1.5 * 1024 * 1024))
+        self.assertEqual(self.server.parse_size("500b"), 500)
+
+        # Default/Fallback
+        self.assertEqual(self.server.parse_size(None), 100 * 1024 * 1024)
+        self.assertEqual(self.server.parse_size(""), 100 * 1024 * 1024)
+        self.assertEqual(self.server.parse_size("invalid"), 100 * 1024 * 1024)
+
+        # Unit variations
+        self.assertEqual(self.server.parse_size("1KB"), 1024)
+        self.assertEqual(self.server.parse_size("1kbs"), 1024)
+
+    def test_load_server_config_missing(self):
+        """Test loading config when file is missing"""
+        orig_base = self.server.BASE_DIR
+        # Point to a directory that definitely doesn't have config.toml
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            self.server.BASE_DIR = Path(tmp_dir)
+            config = self.server.load_server_config()
+            self.assertEqual(config["port"], 8000)
+            self.assertEqual(config["host"], "0.0.0.0")
+        self.server.BASE_DIR = orig_base
+
+    def test_load_server_config_valid(self):
+        """Test loading a valid config.toml"""
+        orig_base = self.server.BASE_DIR
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            self.server.BASE_DIR = tmp_path
+            config_file = tmp_path / "config.toml"
+            with open(config_file, "w") as f:
+                f.write('[server]\nport = 9000\nhost = "127.0.0.1"\n')
+                f.write('[storage]\nmax_file_size = "50MB"\n')
+
+            config = self.server.load_server_config()
+            self.assertEqual(config["port"], 9000)
+            self.assertEqual(config["host"], "127.0.0.1")
+            self.assertEqual(config["max_file_size"], "50MB")
+        self.server.BASE_DIR = orig_base
+
 
 if __name__ == "__main__":
     unittest.main()
