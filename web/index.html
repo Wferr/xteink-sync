@@ -234,6 +234,24 @@
       <hr />
 
       <fieldset>
+        <h3>QR Code Helper</h3>
+        <p>Parse raw hex data from Xteink QR codes.</p>
+        <p class="grouped">
+          <input
+            type="text"
+            id="qrHexInput"
+            placeholder="Paste QR Hex String..."
+            style="flex-grow: 1"
+          />
+          <button class="button primary" id="btnParseQr">Parse</button>
+        </p>
+        <div id="qrResults" class="is-hidden">
+          <pre id="qrResultsPre"></pre>
+        </div>
+      </fieldset>
+      <hr />
+
+      <fieldset>
         <h3>Console Log</h3>
         <pre id="consoleLog"></pre>
       </fieldset>

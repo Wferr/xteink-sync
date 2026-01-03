@@ -341,5 +341,43 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  // Wire up QR Parser
+  const btnParseQr = document.getElementById("btnParseQr");
+  const qrInput = document.getElementById("qrHexInput");
+  const qrResults = document.getElementById("qrResults");
+  const qrResultsPre = document.getElementById("qrResultsPre");
+
+  if (btnParseQr) {
+    btnParseQr.addEventListener("click", () => {
+      const hex = qrInput.value.trim();
+      if (!hex) {
+        alert("Please enter a hex string");
+        return;
+      }
+
+      // Dynamic import if not top-level, or just use imported function
+      // verify we imported it at top level? No, let's do dynamic import or update imports
+      import("./qr-utils.js")
+        .then((module) => {
+          const result = module.parseQrCode(hex);
+          if (qrResults && qrResultsPre) {
+            qrResults.classList.remove("is-hidden");
+            if (result.success) {
+              qrResultsPre.textContent = JSON.stringify(result, null, 2);
+              qrResultsPre.style.color = "inherit";
+              log("QR Parsed Successfully", "success");
+            } else {
+              qrResultsPre.textContent = `Error: ${result.error}`;
+              qrResultsPre.style.color = "red";
+              log(`QR Parse Error: ${result.error}`, "error");
+            }
+          }
+        })
+        .catch((err) => {
+          log(`Failed to load qr-utils: ${err.message}`, "error");
+        });
+    });
+  }
+
   log("Web Flasher ready. Select baud rate and connect...", "success");
 });
