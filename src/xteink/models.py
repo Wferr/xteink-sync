@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -125,7 +125,7 @@ class Device(BaseModel):
 
 
 class DeviceBindingResponse(BaseModel):
-    data: List[Device]
+    data: list[Device]
     success: bool
 
 
@@ -154,12 +154,12 @@ class Task(BaseModel):
     source_url: Optional[str] = None
     result_url: Optional[str] = None
     type: Optional[TaskType] = None
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[dict[str, Any]] = None
 
 
 class TaskListResponse(BaseModel):
     success: bool
-    tasks: List[Task]
+    tasks: list[Task]
     total: int
     total_done: int
     total_pending: int
@@ -176,7 +176,7 @@ class TaskCreateRequest(BaseModel):
     source_url: Optional[str] = None
     result_url: Optional[str] = None
     auto_push: bool = False
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[dict[str, Any]] = None
 
 
 class TaskCreateResponse(BaseModel):
@@ -224,7 +224,7 @@ class XtcConvertRequest(BaseModel):
     device_id: str
     epub_url: Optional[str] = None
     pdf_url: Optional[str] = None
-    image_urls: Optional[List[str]] = None
+    image_urls: Optional[list[str]] = None
 
 
 class XtcConvertResponse(BaseModel):
@@ -256,7 +256,7 @@ class WallpaperListResponse(BaseModel):
     category: str
     success: bool
     total: int
-    wallpapers: List[Wallpaper]
+    wallpapers: list[Wallpaper]
 
 
 # --- RSS & Web Articles ---
@@ -273,7 +273,7 @@ class Article(BaseModel):
 
 
 class RSSParseResponse(BaseModel):
-    articles: List[Article]
+    articles: list[Article]
 
 
 class UrlToPlainRequest(BaseModel):
@@ -346,5 +346,5 @@ class HealthResponse(BaseModel):
 
 class FirmwareCheckResponse(BaseModel):
     code: int
-    data: Dict[str, Any]
+    data: dict[str, Any]
     message: str

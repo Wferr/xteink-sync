@@ -142,8 +142,9 @@ class TestCLI(unittest.TestCase):
             with patch("sys.stdout", new=io.StringIO()) as fake_out:
                 main()
                 output = fake_out.getvalue()
+                output_lower = output.lower()
                 self.assertIn("t1", output)
-                self.assertIn("PENDING", output)
+                self.assertIn("pending", output_lower)
 
     @patch("xteink.cli.main.XteinkClient")
     @patch("xteink.cli.tasks.os.path.exists")

@@ -6,16 +6,12 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Optional
 
 try:
     import tomllib
 except ImportError:
     import tomli as tomllib
-try:
-    from typing import Annotated
-except ImportError:
-    from typing_extensions import Annotated
 import uvicorn
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
@@ -80,7 +76,7 @@ def parse_size(size_str: Optional[str]) -> int:
 
 
 # Configuration Loading
-def load_server_config() -> Dict[str, Any]:
+def load_server_config() -> dict[str, Any]:
     config_path = BASE_DIR / "config.toml"
     config = {
         "host": "0.0.0.0",
@@ -160,7 +156,7 @@ class LoginRequest(BaseModel):
     password: str
 
 
-def load_tokens() -> Dict[str, Dict[str, Any]]:
+def load_tokens() -> dict[str, dict[str, Any]]:
     if not TOKENS_FILE.exists():
         return {}
     try:
@@ -170,7 +166,7 @@ def load_tokens() -> Dict[str, Dict[str, Any]]:
         return {}
 
 
-def save_tokens(tokens: Dict[str, Dict[str, Any]]):
+def save_tokens(tokens: dict[str, dict[str, Any]]):
     with open(TOKENS_FILE, "w") as f:
         json.dump(tokens, f, indent=2)
 
@@ -219,7 +215,7 @@ EXTENSION_REMAP = {
 }
 
 
-def load_tasks() -> Dict[str, List[Dict[str, Any]]]:
+def load_tasks() -> dict[str, list[dict[str, Any]]]:
     try:
         with open(TASKS_FILE) as f:
             return json.load(f)
@@ -227,12 +223,12 @@ def load_tasks() -> Dict[str, List[Dict[str, Any]]]:
         return {}
 
 
-def save_tasks(tasks: Dict[str, List[Dict[str, Any]]]):
+def save_tasks(tasks: dict[str, list[dict[str, Any]]]):
     with open(TASKS_FILE, "w") as f:
         json.dump(tasks, f, indent=2)
 
 
-def load_devices() -> List[Dict[str, Any]]:
+def load_devices() -> list[dict[str, Any]]:
     """Load all known devices from persistent storage"""
     try:
         with open(DEVICES_FILE) as f:
@@ -241,7 +237,7 @@ def load_devices() -> List[Dict[str, Any]]:
         return []
 
 
-def save_devices(devices: List[Dict[str, Any]]):
+def save_devices(devices: list[dict[str, Any]]):
     """Save devices to persistent storage"""
     with open(DEVICES_FILE, "w") as f:
         json.dump(devices, f, indent=2)
@@ -255,25 +251,25 @@ def is_known_device(device_id: str) -> bool:
     return any(d.get("device_id") == device_id for d in devices)
 
 
-async def load_devices_async() -> List[Dict[str, Any]]:
+async def load_devices_async() -> list[dict[str, Any]]:
     """Load devices asynchronously (non-blocking)"""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, load_devices)
 
 
-async def save_devices_async(devices: List[Dict[str, Any]]):
+async def save_devices_async(devices: list[dict[str, Any]]):
     """Save devices asynchronously (non-blocking)"""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, save_devices, devices)
 
 
-async def load_tasks_async() -> Dict[str, List[Dict[str, Any]]]:
+async def load_tasks_async() -> dict[str, list[dict[str, Any]]]:
     """Load tasks asynchronously (non-blocking)"""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, load_tasks)
 
 
-async def save_tasks_async(tasks: Dict[str, List[Dict[str, Any]]]):
+async def save_tasks_async(tasks: dict[str, list[dict[str, Any]]]):
     """Save tasks asynchronously (non-blocking)"""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, save_tasks, tasks)

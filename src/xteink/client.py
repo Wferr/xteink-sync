@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
@@ -74,7 +74,7 @@ class XteinkClient:
         self.user_id: Optional[str] = None
         self._load_tokens()
 
-    def _get_headers(self, auth: bool = False) -> Dict[str, str]:
+    def _get_headers(self, auth: bool = False) -> dict[str, str]:
         """Get headers for API requests"""
         headers = {
             "Content-Type": "application/json; charset=UTF-8",

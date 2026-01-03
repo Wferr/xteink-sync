@@ -7,7 +7,7 @@ name = "xteink"
 version = "0.1.0"
 description = "Tools for interacting with Xteink E-ink devices"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 authors = [
     {name = "xteink-sync contributors"}
 ]
@@ -15,11 +15,12 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
     "pydantic>=2.0.0",
@@ -48,7 +49,7 @@ where = ["src"]
 xteink = ["py.typed"]
 
 [tool.ruff]
-target-version = "py38"
+target-version = "py39"
 line-length = 100
 
 [tool.ruff.lint]
