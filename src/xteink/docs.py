@@ -69,14 +69,15 @@ This documentation covers two systems:
 - Local-only, no cloud dependency
 - Core sync functionality (tasks, files)
 - File type validation
-- No authentication (bypassed)
-- No image processing (pass-through only)
-- No device binding (not needed)
+- **Authentication supported** (configurable `ENABLE_AUTH`)
+- **Image processing** (resizing, dithering, XTG/XTH/BMP conversion)
+- **Device binding/registration** (`AUTO_REGISTER_DEVICES` support)
+- **Auto-delete** (configurable `DELETE_AFTER_TRANSFER`)
 
 ## Endpoint Tags
 
 - **[Production]**: Only available on production API
-- **[Custom Server]**: Implemented in custom sync server
+- **[Custom Server]**: Only available or specific behavior in custom sync server
 - **[Both]**: Available in both systems (may have differences)
 
 ## Supported File Types (Custom Server)
@@ -124,11 +125,13 @@ async def root():
 # --- Authentication ---
 
 
-@app.post("/auth/login", response_model=AuthResponse, tags=["[Production] Authentication"])
+@app.post("/auth/login", response_model=AuthResponse, tags=["[Both] Authentication"])
 async def login(request: AuthRequest):
-    """[Production Only] Login with email and password to obtain access and refresh tokens.
+    """Login with email and password to obtain an access token.
 
-    The custom sync server does not implement authentication.
+    Custom Server:
+    - Checks credentials against `config.toml` accounts.
+    - Generates local tokens stored in `data/tokens.json`.
     """
     return {"access_token": "mock_token", "success": True}
 
@@ -190,22 +193,22 @@ async def register(request: RegisterRequest):
 @app.get(
     "/api/v1/device/binding",
     response_model=DeviceBindingResponse,
-    tags=["[Production] Device"],
+    tags=["[Both] Device"],
     dependencies=[Depends(access_security)],
 )
 async def get_device_binding():
-    """[Production Only] Get bound devices for the authenticated user."""
+    """Get bound devices for the authenticated user."""
     return {"data": [], "success": True}
 
 
 @app.post(
     "/api/v1/device/binding",
     response_model=DeviceBindingAddResponse,
-    tags=["[Production] Device"],
+    tags=["[Both] Device"],
     dependencies=[Depends(access_security)],
 )
 async def bind_device(request: DeviceBindingRequest):
-    """[Production Only] Bind a new device to the authenticated user's account."""
+    """Bind a new device / Register device."""
     return {
         "success": True,
         "message": "Device bound successfully",
@@ -245,7 +248,8 @@ async def get_device_tasks(device_id: str, status: str = "all", limit: Optional[
     Custom Server Differences:
     - Tasks sorted: pending > processing > failed > completed
     - Failed tasks auto-retried (up to 3 times)
-    - No authentication required
+    - Authentication optional if `ENABLE_AUTH` is False
+    - Supports broadcast tasks (device_id="all")
 
     Supported File Types: .txt, .jpg, .epub, .xtc, .xtch, .bmp, .bin
 
@@ -306,9 +310,19 @@ async def complete_task(task_id: str, request: TaskCompletionRequest):
     Mark a task as completed or failed.
 
     Devices call this endpoint after attempting to process a task.
-    If the download or local processing fails, the device reports `status: failed`.
+    Custom Server: If `DELETE_AFTER_TRANSFER` is enabled, the local file is deleted upon success.
     """
     return {"success": True, "code": 0}
+
+
+@app.put(
+    "/api/v1/device/tasks/{task_id}/status",
+    response_model=BaseResponse,
+    tags=["[Custom Server] Tasks"],
+)
+async def update_task_status(task_id: str, status: str):
+    """[Custom Server Only] Manually update a task status."""
+    return {"success": True}
 
 
 # --- File Management ---
@@ -331,11 +345,16 @@ async def upload_file(file: UploadFile = File(...)):  # noqa: B008
 @app.post(
     "/api/v1/ai/image_resize",
     response_model=ImageResizeResponse,
-    tags=["[Production] AI"],
+    tags=["[Both] AI"],
     dependencies=[Depends(access_security)],
 )
 async def image_resize(request: ImageResizeRequest):
-    """Resize/Process image for e-ink."""
+    """Resize/Process image for e-ink.
+
+    Custom Server:
+    - Supports `dithering` ("floyd_steinberg" or "none").
+    - Returns `download_url_fs` (BMP), `download_url_xtg`, and `download_url_xth`.
+    """
     return {"success": True}
 
 
@@ -380,7 +399,7 @@ async def get_wallpapers(device_id: str):
 @app.post(
     "/api/v1/rss/parse",
     response_model=RSSParseResponse,
-    tags=["[Production] RSS"],
+    tags=["[Both] RSS"],
 )
 async def parse_rss(request: RSSParseRequest):
     """Parse RSS feed."""
@@ -390,7 +409,7 @@ async def parse_rss(request: RSSParseRequest):
 @app.post(
     "/api/v1/ai/url_plain",
     response_model=UrlToPlainResponse,
-    tags=["[Production] RSS"],
+    tags=["[Both] RSS"],
 )
 async def url_to_plain(request: UrlToPlainRequest):
     """Convert URL to plain text."""

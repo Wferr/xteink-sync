@@ -75,7 +75,8 @@ def firmware_check(args, client):
     """Check for firmware updates."""
     try:
         device_type = args.device_type or "ESP32C3"
-        current_version = args.current_version or "3.1.5"
+        # Default to 3.1.4 to demonstrate firmware update availability (latest is 3.1.5)
+        current_version = args.current_version or "3.1.4"
         result = client.check_firmware_update(
             device_type=device_type,
             current_version=current_version,

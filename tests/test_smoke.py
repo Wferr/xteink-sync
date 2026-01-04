@@ -76,13 +76,14 @@ class TestSmoke(unittest.TestCase):
 
     def test_custom_server_imports(self):
         """Test that custom server can be imported"""
-        custom_server_path = Path(__file__).parent.parent / "server"
+        custom_server_path = Path(__file__).parent.parent
         sys.path.insert(0, str(custom_server_path))
-        import server
+
+        import server.core.data as server_data
 
         # Just check that the module loads
-        self.assertTrue(hasattr(server, "load_tasks"))
-        self.assertTrue(hasattr(server, "save_tasks"))
+        self.assertTrue(hasattr(server_data, "load_tasks"))
+        self.assertTrue(hasattr(server_data, "save_tasks"))
 
     def test_docs_server(self):
         """Test that docs server can be imported"""

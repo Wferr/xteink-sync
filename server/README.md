@@ -35,7 +35,7 @@ A lightweight, local replacement for the Xteink Cloud API. This server enables *
 
 ### 1. Start the Server
 ```bash
-python server/server.py
+python server/main.py
 ```
 By default, the API runs on port **8000**. Port **5000** (firmware) is active but serves mock responses.
 

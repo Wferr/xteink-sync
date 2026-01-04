@@ -431,6 +431,62 @@ class TestCLI(unittest.TestCase):
                 self.assertIn("Firmware Update Available", output)
                 self.assertIn("3.1.6", output)
 
+    @patch("xteink.cli.main.XteinkClient")
+    @patch("xteink.cli.tasks.os.path.exists")
+    @patch("xteink.cli.tasks.os.path.getsize")
+    def test_send_command_extension_sync(self, mock_getsize, mock_exists, mock_client_class):
+        """Test that send command syncs save_path extension with processed format"""
+        mock_exists.return_value = True
+        mock_getsize.return_value = 100
+        mock_client = mock_client_class.return_value
+
+        from xteink.models import ImageResizeResponse
+
+        # 1. Local .jpg -> processed .bmp (fs)
+        mock_client.upload_file.return_value = FileUploadResponse(
+            download_url="http://u.com/img.jpg", filename="img.jpg", success=True
+        )
+        mock_client.image_resize.return_value = ImageResizeResponse(
+            success=True,
+            download_url_fs="http://u.com/img_fs.bmp",
+            filename_fs="img_fs.bmp",
+        )
+        task = Task(
+            task_id="t1",
+            device_id="dev1",
+            status=TaskStatus.PENDING,
+            file_url="http://u.com/img_fs.bmp",
+            save_path="/img.bmp",
+        )
+        mock_client.create_device_task.return_value = TaskCreateResponse(success=True, task=task)
+
+        from xteink.cli.main import main
+
+        # Default save_path generation test
+        with patch("sys.argv", ["xteink", "send", "photo.jpg", "dev1"]):
+            with patch("sys.stdout", new=io.StringIO()):
+                main()
+                # Verify create_device_task was called with .bmp extension
+                call_args = mock_client.create_device_task.call_args[0]
+                save_path = call_args[2]
+                self.assertTrue(save_path.endswith(".bmp"), f"Extension mismatch: {save_path}")
+
+        # 2. Remote .png -> processed .xtg
+        mock_client.create_device_task.reset_mock()
+        mock_client.image_resize.return_value = ImageResizeResponse(
+            success=True,
+            download_url_xtg="http://u.com/icon.xtg",
+            filename_xtg="icon.xtg",
+        )
+
+        args = ["xteink", "send", "http://o.com/icon.png", "dev1", "--format", "xtg"]
+        with patch("sys.argv", args):
+            with patch("sys.stdout", new=io.StringIO()):
+                main()
+                call_args = mock_client.create_device_task.call_args[0]
+                save_path = call_args[2]
+                self.assertTrue(save_path.endswith(".xtg"), f"Extension mismatch: {save_path}")
+
 
 if __name__ == "__main__":
     unittest.main()

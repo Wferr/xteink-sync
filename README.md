@@ -41,16 +41,27 @@ xteink status
 xteink devices
 xteink bind
 
-# Sending Files
-xteink send <file_path> <device_id> [save_path]
+# Sending Files (or URLs)
+xteink send <file_path_or_url> <device_id> [save_path]
+
+# Supported File Types:
+# - Images: .jpg, .jpeg, .png, .bmp, .gif, .webp
+# - Native: .xtg, .xth, .xtc, .xtch
+# - Docs:   .txt, .epub
+# - Binary: .bin
 
 # Custom Server Usage
 xteink --server http://<your_ip>:8000 send <file> <device_id>
+
+# RSS Feed to E-Ink (Reader Mode)
+xteink rss https://news.ycombinator.com/rss --device-id <device_id> --format xtc
 ```
 
 ### Sync Server & Local Sync
 
-1. **Start Server**: `python server/server.py`
+### Sync Server & Local Sync
+
+1. **Start Server**: `python server/main.py`
 2. **Setup Device**: Use the [Web Interface](http://localhost:8080) to patch your firmware. Replace the default API IP (`8.130.157.48`) with your computer's local IP.
 3. **Flash**: Flash the patched firmware to your device.
 
