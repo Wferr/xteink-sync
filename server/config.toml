@@ -6,10 +6,20 @@ host = "0.0.0.0"
 port = 8000
 # Allow or deny new devices from automatically registering
 auto_register_devices = true
+# Timestamp format: "unix" (float) or "iso8601" (string)
+timestamp_format = "unix"
+# Default resize mode for images: "cover" (center crop) or "contain"
+default_resize_mode = "cover"
 
 [storage]
 # File Storage Limits
 max_file_size = "100MB"
+# Root data directory (relative to project root or absolute)
+data_dir = "data"
+# Date format for task save paths (Python strftime format)
+task_path_date_format = "%Y-%m-%d"
+# Automatically delete files once a device confirms transfer (POST /complete)
+delete_after_transfer = false
 
 [firmware]
 # Mock Firmware Update Server
@@ -22,13 +32,24 @@ enabled = false
 
 # Multiple accounts can be defined by repeating [[auth.users]]
 
-[[auth.users]]
-email = "admin@example.com"
-password = "admin"
-nickname = "Administrator"
+# [[auth.users]]
+# email = "admin@example.com"
+# password = "admin"
+# nickname = "Administrator"
 
 # Example of a second user (uncomment to use)
 # [[auth.users]]
 # email = "guest@example.com"
 # password = "guest"
 # nickname = "Guest User"
+
+[rss]
+# RSS Feed Settings
+max_articles = 10
+default_format = "xtc"
+reader_mode = true
+
+# Text Rendering for RSS
+font_size = 20
+line_spacing = 8
+page_margin = 40

@@ -15,9 +15,13 @@ class TaskStatus(str, Enum):
 
 
 class TaskType(str, Enum):
+    """Known task types for documentation purposes."""
+
     FILE_TRANSFER = "file_transfer"
     IMAGE_RESIZE = "image_resize"
     FIRMWARE_UPDATE = "firmware_update"
+    HOT_NEWS = "hot_news"
+    WALLPAPER = "wallpaper"
 
 
 class XtcInputType(str, Enum):
@@ -29,6 +33,11 @@ class XtcInputType(str, Enum):
 class DitheringType(str, Enum):
     FLOYD_STEINBERG = "floyd_steinberg"
     NONE = "none"
+
+
+class ResizeMode(str, Enum):
+    CONTAIN = "contain"
+    COVER = "cover"
 
 
 # --- Generic Response Models ---
@@ -59,7 +68,8 @@ class AuthResponse(BaseModel):
     access_token: str
     refresh_token: Optional[str] = None
     user_id: Optional[str] = None
-    success: bool
+    username: Optional[str] = None
+    success: bool = True
 
 
 class LogoutResponse(BaseModel):
@@ -90,8 +100,8 @@ class User(BaseModel):
     nickname: Optional[str] = None
     role: str
     is_active: bool
-    created_at: str
-    updated_at: str
+    created_at: str | float | int  # Production: ISO8601 string, Custom: unix timestamp
+    updated_at: str | float | int  # Production: ISO8601 string, Custom: unix timestamp
     avatar_url: Optional[str] = None
     phone_number: Optional[str] = None
     current_tokens: int = 0
@@ -107,6 +117,7 @@ class RegisterResponse(BaseModel):
 
 class TokenRefreshResponse(BaseModel):
     access_token: str
+    refresh_token: Optional[str] = None
     success: bool
 
 
@@ -115,11 +126,11 @@ class TokenRefreshResponse(BaseModel):
 
 class Device(BaseModel):
     brand: str
-    created_at: str
+    created_at: str | float | int  # Production: ISO8601 string, Custom: unix timestamp
     device_id: str
     device_type: str
     id: str
-    updated_at: str
+    updated_at: str | float | int  # Production: ISO8601 string, Custom: unix timestamp
     user_id: str
     version: str
 
@@ -149,11 +160,11 @@ class Task(BaseModel):
     file_url: str
     save_path: str
     size: Optional[int] = None
-    created_at: Optional[int] = None
-    expires_at: Optional[int] = None
+    created_at: Optional[float | int] = None  # Custom server uses float, reorder for Pydantic
+    expires_at: Optional[float | int] = None  # Custom server uses float, reorder for Pydantic
     source_url: Optional[str] = None
     result_url: Optional[str] = None
-    type: Optional[TaskType] = None
+    type: Optional[str] = None
     metadata: Optional[dict[str, Any]] = None
 
 
@@ -172,7 +183,7 @@ class TaskCreateRequest(BaseModel):
     file_url: str
     save_path: str
     size: Optional[int] = None
-    type: TaskType = TaskType.FILE_TRANSFER
+    type: str = "file_transfer"
     source_url: Optional[str] = None
     result_url: Optional[str] = None
     auto_push: bool = False
@@ -205,9 +216,11 @@ class ImageResizeRequest(BaseModel):
     image_url: str
     device_id: str
     dithering: DitheringType = DitheringType.FLOYD_STEINBERG
+    crop_mode: Optional[ResizeMode] = None
 
 
 class ImageResizeResponse(BaseModel):
+    download_url: Optional[str] = None
     download_url_fs: Optional[str] = None
     download_url_none: Optional[str] = None
     download_url_xtg: Optional[str] = None
@@ -272,8 +285,20 @@ class Article(BaseModel):
     published: Optional[str] = None
 
 
+class FeedInfo(BaseModel):
+    title: str
+    description: Optional[str] = None
+    link: Optional[str] = None
+    language: Optional[str] = None
+    updated: Optional[str] = None
+
+
 class RSSParseResponse(BaseModel):
     articles: list[Article]
+    feed_info: Optional[FeedInfo] = None
+    success: bool = True
+    total_articles: int = 0
+    cached: bool = False
 
 
 class UrlToPlainRequest(BaseModel):

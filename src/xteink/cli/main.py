@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-from xteink.cli import auth, devices, files, tasks, utils
+from xteink.cli import auth, convert, devices, files, rss, tasks, utils, wallpaper
 from xteink.client import XteinkClient
 
 
@@ -12,7 +12,7 @@ def main():
     parser = argparse.ArgumentParser(
         prog="xteink", description="Xteink Cloud Sync CLI - Send files to Xteink devices"
     )
-    parser.add_argument("--server", "-s", help="Custom API Server IP or URL (e.g., 10.1.2.144)")
+    parser.add_argument("--server", "-s", help="Custom API Server IP or URL (e.g., 192.168.1.20)")
     parser.add_argument("--json", "-j", action="store_true", help="Output as JSON")
 
     subparsers = parser.add_subparsers(dest="command", help="Commands")
@@ -74,7 +74,6 @@ def main():
     create_task_p.add_argument("size", type=int, help="File size")
     create_task_p.add_argument("--type", default="file_transfer", help="Task type")
     create_task_p.set_defaults(func=tasks.create_task)
-
     send_p = subparsers.add_parser("send", help="Upload image and send to device")
     send_p.add_argument("file_path", help="Path to image file")
     send_p.add_argument("device_id", nargs="?", help="Device ID")
@@ -83,7 +82,29 @@ def main():
     send_p.add_argument(
         "--format", default="fs", choices=["fs", "none", "xtg", "xth"], help="Output format"
     )
+    send_p.add_argument(
+        "--resize-mode",
+        default="cover",
+        choices=["cover", "contain"],
+        help="Resize mode (cover=center crop, contain=fit)",
+    )
     send_p.set_defaults(func=tasks.send)
+
+    # Convert Command
+    conv_p = subparsers.add_parser("convert", help="Local image conversion")
+    conv_p.add_argument("file_path", help="Path to image file")
+    conv_p.add_argument("--output", "-o", help="Output path (optional)")
+    conv_p.add_argument(
+        "--format", default="xtg", choices=["xtg", "xth", "bmp", "fs", "jpg"], help="Output format"
+    )
+    conv_p.add_argument("--dithering", default="floyd", help="Dithering mode")
+    conv_p.add_argument(
+        "--resize-mode",
+        default="cover",
+        choices=["cover", "contain"],
+        help="Resize mode (cover=center crop, contain=fit)",
+    )
+    conv_p.set_defaults(func=convert.convert)
 
     # File Commands
     upload_p = subparsers.add_parser("upload", help="Upload a file to the cloud")
@@ -104,10 +125,30 @@ def main():
 
     firm_p = subparsers.add_parser("firmware-check", help="Check for firmware updates")
     firm_p.add_argument("device_type", nargs="?", default="ESP32C3", help="Device type")
-    firm_p.add_argument("current_version", nargs="?", default="3.1.5", help="Current version")
+    firm_p.add_argument("current_version", nargs="?", default="3.1.4", help="Current version")
     firm_p.add_argument("--device-id", help="Device ID")
     firm_p.add_argument("--mac", help="MAC address")
     firm_p.set_defaults(func=utils.firmware_check)
+
+    # Wallpaper Command
+    wall_p = subparsers.add_parser("wallpaper", help="Upload and set wallpaper")
+    wall_p.add_argument("file_path", help="Image file path")
+    wall_p.add_argument("device_id", nargs="?", help="Target Device ID")
+    wall_p.add_argument(
+        "--dithering", default="floyd", choices=["none", "floyd"], help="Dithering mode"
+    )
+    wall_p.set_defaults(func=wallpaper.wallpaper)
+
+    # RSS Commands
+    rss_p = subparsers.add_parser("rss", help="Fetch and convert RSS feed")
+    rss_p.add_argument("feed_url", help="RSS Feed URL")
+    rss_p.add_argument("device_id", nargs="?", help="Target Device ID (optional)")
+    rss_p.add_argument("--limit", type=int, default=10, help="Max articles")
+    rss_p.add_argument("--format", default="xtc", choices=["xtc", "xtch"], help="Output format")
+    rss_p.add_argument(
+        "--dithering", default="floyd", choices=["none", "floyd"], help="Dithering mode"
+    )
+    rss_p.set_defaults(func=rss.rss)  # We will import this below
 
     if len(sys.argv) == 1:
         parser.print_help()

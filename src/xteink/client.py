@@ -120,7 +120,9 @@ class XteinkClient:
     ) -> XteinkResponse:
         """Internal request helper using urllib.request"""
         if params:
-            url = f"{url}?{urlencode(params)}"
+            # Filter out None values
+            params = {k: v for k, v in params.items() if v is not None}
+            url += "?" + urlencode(params)
 
         if json_data:
             data = json.dumps(json_data).encode("utf-8")
@@ -325,7 +327,7 @@ class XteinkClient:
         return ClientVersionResponse(**response.json())
 
     def get_device_tasks(
-        self, device_id: str, status: str = "all", limit: Optional[int] = None
+        self, device_id: str, status: Optional[str] = None, limit: Optional[int] = None
     ) -> TaskListResponse:
         """Get device tasks"""
         url = f"{self.BASE_URL}/api/v1/device/tasks"
@@ -394,11 +396,20 @@ class XteinkClient:
         return FileUploadResponse(**response.json())
 
     def image_resize(
-        self, image_url: str, device_id: str, dithering: str = "floyd_steinberg"
+        self,
+        image_url: str,
+        device_id: str,
+        dithering: str = "floyd_steinberg",
+        crop_mode: Optional[str] = None,
     ) -> ImageResizeResponse:
         """Process an image for different display modes"""
         url = f"{self.BASE_URL}/api/v1/ai/image_resize"
-        data = {"image_url": image_url, "device_id": device_id, "dithering": dithering}
+        data = {
+            "image_url": image_url,
+            "device_id": device_id,
+            "dithering": dithering,
+            "crop_mode": crop_mode,
+        }
         response = self._make_authenticated_request("POST", url, json=data)
         return ImageResizeResponse(**response.json())
 
@@ -409,6 +420,7 @@ class XteinkClient:
         save_path: str,
         size: int,
         task_type: str = "file_transfer",
+        metadata: Optional[dict[str, Any]] = None,
     ) -> TaskCreateResponse:
         """Create a new device task"""
         url = f"{self.BASE_URL}/api/v1/device/tasks"
@@ -419,6 +431,8 @@ class XteinkClient:
             "size": size,
             "type": task_type,
         }
+        if metadata:
+            data["metadata"] = metadata
         response = self._make_authenticated_request("POST", url, json=data)
         return TaskCreateResponse(**response.json())
 

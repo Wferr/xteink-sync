@@ -1,0 +1,45 @@
+# server/config.toml
+# Xteink-Sync Server Configuration
+
+[server]
+# Host to bind to (0.0.0.0 to allow external access)
+host = "0.0.0.0"
+# Port to listen on
+port = 8000
+# Automatically register new devices that connect
+auto_register_devices = true
+# Timestamp format for API responses: "unix" (float) or "iso8601" (string)
+timestamp_format = "unix" 
+# Documentation UI: "redoc" (cleaner) or "swagger" (interactive)
+doc_ui = "redoc"
+# Default resize mode for images: "cover" (center crop) or "contain" (fit)
+default_resize_mode = "cover"
+
+[firmware]
+# Enable the firmware update server
+enabled = false
+port = 5000
+
+[storage]
+# Maximum file size for uploads
+max_file_size = "100MB"
+# Automatically delete files after they have been marked as completed (downloaded)
+delete_after_transfer = false
+
+[auth]
+# Enable authentication for Device and Admin APIs
+enabled = false
+# List of admin accounts
+users = [
+    { email = "admin@example.com", password = "admin", nickname = "Administrator" }
+]
+
+[rss]
+# Maximum articles to parse per feed
+max_articles = 10
+# Default output format
+default_format = "epub"
+
+[tasks]
+# Maximum retries for failed tasks (not fully implemented)
+max_retries = 3
